@@ -79,3 +79,4 @@ The backend sets the transaction-local PostgreSQL variable using `set_config('ap
 The nurse dashboard opens `/api/v1/ws/triage` for all realtime queue updates. Local actions update the UI immediately. During network loss, actions are stored in `localStorage`, affected cards show reduced opacity with `⏱️ Pending Sync`, and the sticky toast switches between connected, reconnecting, and offline states.
 
 # clinicalflow
+# clinicalflow
