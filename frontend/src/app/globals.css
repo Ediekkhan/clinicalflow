@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-brand: #0D7A5F;
+  --color-brand-light: #E6F4F0;
+  --color-surface: #F7F8FA;
+  --color-panel: #FFFFFF;
+  --color-ink: #111827;
+  --color-muted: #6B7280;
+  --color-border: #E5E7EB;
+  --urgency-critical-text: #DC2626;
+  --urgency-critical-bg: #FEF2F2;
+  --urgency-critical-border: #FCA5A5;
+  --urgency-urgent-text: #D97706;
+  --urgency-urgent-bg: #FFFBEB;
+  --urgency-urgent-border: #FCD34D;
+  --urgency-routine-text: #0284C7;
+  --urgency-routine-bg: #EFF6FF;
+  --urgency-routine-border: #93C5FD;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-height: 100%;
+}
+
+body {
+  min-height: 100%;
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.touch-target {
+  @apply min-h-12 rounded-lg px-4 py-2.5 text-sm font-medium transition;
+}
+
+.front-desk-target {
+  @apply min-h-12 rounded-lg px-5 py-4 text-sm font-semibold transition;
+}
+
+.data-row {
+  @apply px-4 py-3.5 text-sm;
+}
+
+.hero-radial {
+  background:
+    radial-gradient(ellipse at 30% 50%, rgba(13,122,95,0.15) 0%, transparent 60%),
+    #0d1117;
+}
+
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+}
+
+.font-ui {
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+}
