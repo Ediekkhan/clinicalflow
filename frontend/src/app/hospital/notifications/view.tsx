@@ -28,7 +28,7 @@ export default function HospitalNotificationsClient() {
         </div>
         <div className="flex flex-wrap gap-2">
           {(['All', 'Unread', 'Urgent'] as Tab[]).map((item) => (
-            <button key={item} onClick={() => setTab(item)} className={`touch-target ${tab === item ? 'bg-[#0D7A5F] text-white' : 'bg-white text-[#111827] ring-1 ring-[#E5E7EB]'}`}>
+            <button key={item} onClick={() => setTab(item)} className={`touch-target ${tab === item ? 'bg-[#2563EB] text-white' : 'bg-white text-[#111827] ring-1 ring-[#E5E7EB]'}`}>
               {item}
             </button>
           ))}
@@ -39,13 +39,13 @@ export default function HospitalNotificationsClient() {
             return (
               <article key={item.id} className="rounded-card border border-[#E5E7EB] bg-white p-4 shadow-sm">
                 <div className="grid gap-3 md:grid-cols-[auto_1fr_auto_auto] md:items-center">
-                  <Icon className="h-5 w-5 text-[#0D7A5F]" />
+                  <Icon className="h-5 w-5 text-[#2563EB]" />
                   <div>
                     <p className="font-bold text-[#111827]">{item.title}</p>
                     <p className="text-sm text-[#6B7280]">{item.body}</p>
                   </div>
                   {item.urgency_level ? <UrgencyBadge level={item.urgency_level} /> : null}
-                  <button onClick={() => markRead(item.id)} className="touch-target bg-[#E6F4F0] text-[#0D7A5F]">Mark Read</button>
+                  <button onClick={() => markRead(item.id)} className="touch-target bg-[#e0f2fe] text-[#2563EB]">Mark Read</button>
                 </div>
               </article>
             );

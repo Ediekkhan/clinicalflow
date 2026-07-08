@@ -74,7 +74,7 @@ export function PatientContextDrawer({
                 <button
                   type="button"
                   onClick={() => onSetBeingSeen(ticket.id)}
-                  className="front-desk-target inline-flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                  className="front-desk-target inline-flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700"
                 >
                   <Stethoscope className="h-5 w-5" />
                   Start review

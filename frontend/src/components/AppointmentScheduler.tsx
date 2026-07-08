@@ -63,7 +63,7 @@ export function AppointmentScheduler() {
           <p className="text-sm font-medium uppercase tracking-wider text-slate-500">Master Scheduler</p>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Provider calendar grid</h1>
         </div>
-        <button className="touch-target inline-flex items-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
+        <button className="touch-target inline-flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-700">
           <Send className="h-4 w-4" />
           Send patient updates
         </button>

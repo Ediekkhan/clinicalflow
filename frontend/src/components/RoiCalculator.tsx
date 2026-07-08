@@ -17,7 +17,7 @@ export function RoiCalculator() {
   return (
     <section className="grid gap-6 rounded-lg border border-slate-200 bg-white p-4 md:p-6">
       <div className="flex items-center gap-3">
-        <span className="rounded-lg bg-emerald-50 p-3 text-emerald-600">
+        <span className="rounded-lg bg-blue-50 p-3 text-blue-600">
           <Calculator className="h-6 w-6" />
         </span>
         <div>
@@ -34,7 +34,7 @@ export function RoiCalculator() {
             max={600}
             value={dailyCapacity}
             onChange={(event) => setDailyCapacity(Number(event.target.value))}
-            className="accent-emerald-600"
+            className="accent-blue-600"
           />
         </label>
         <label className="grid gap-3 text-sm font-medium text-slate-700">
@@ -45,7 +45,7 @@ export function RoiCalculator() {
             max={20}
             value={minutesSaved}
             onChange={(event) => setMinutesSaved(Number(event.target.value))}
-            className="accent-emerald-600"
+            className="accent-blue-600"
           />
         </label>
       </div>
@@ -65,11 +65,11 @@ export function RoiCalculator() {
       </div>
       <form className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <input
-          className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+          className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           placeholder="operations@clinic.ng"
           type="email"
         />
-        <button className="touch-target inline-flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700">
+        <button className="touch-target inline-flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700">
           <Send className="h-4 w-4" />
           Request demo
         </button>

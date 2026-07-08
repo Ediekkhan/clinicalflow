@@ -16,7 +16,7 @@ export function SpecialistShell({ children }: { children: React.ReactNode }) {
       <header className="bg-[#0D1117] text-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 p-4 md:p-6">
           <div>
-            <Link href="/specialist/dashboard" className="font-display text-3xl text-emerald-300">SynaptiVerse</Link>
+            <Link href="/specialist/dashboard" className="font-display text-3xl text-blue-300">SynaptiVerse</Link>
             <p className="text-sm text-slate-300">{demoSpecialist.full_name} · {demoSpecialist.specialty}</p>
           </div>
           <nav className="flex flex-wrap gap-2">

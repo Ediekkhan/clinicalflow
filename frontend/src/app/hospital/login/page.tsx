@@ -30,7 +30,7 @@ export default function HospitalLoginPage() {
     <main className="grid min-h-screen place-items-center bg-[#0D1117] p-4">
       <form className="grid w-full max-w-md gap-5 rounded-card border border-white/10 bg-white p-5 shadow-md md:p-6">
         <div className="text-center">
-          <p className="font-display text-4xl text-[#0D7A5F]">SynaptiVerse</p>
+          <p className="font-display text-4xl text-[#2563EB]">SynaptiVerse</p>
           <h1 className="mt-3 text-xl font-bold text-[#111827]">Hospital Account Login</h1>
           <p className="mt-2 text-sm leading-6 text-[#6B7280]">
             Doctors, nurses, and admins sign into the hospital account, then see only the queues and patients relevant to their role.
@@ -45,7 +45,7 @@ export default function HospitalLoginPage() {
               className={cn(
                 'front-desk-target flex items-center justify-center gap-2 border',
                 role === item.value
-                  ? 'border-[#0D7A5F] bg-[#E6F4F0] text-[#0D7A5F]'
+                  ? 'border-[#2563EB] bg-[#e0f2fe] text-[#2563EB]'
                   : 'border-[#E5E7EB] bg-white text-[#6B7280]',
               )}
             >
@@ -59,7 +59,7 @@ export default function HospitalLoginPage() {
           <input
             value={hospitalCode}
             onChange={(event) => setHospitalCode(event.target.value)}
-            className="min-h-12 rounded-lg border border-[#E5E7EB] px-4 py-2.5 outline-none focus:border-[#0D7A5F]"
+            className="min-h-12 rounded-lg border border-[#E5E7EB] px-4 py-2.5 outline-none focus:border-[#2563EB]"
           />
           {errors.hospitalCode ? <span className="text-xs text-[#DC2626]">{errors.hospitalCode}</span> : null}
         </label>
@@ -70,13 +70,13 @@ export default function HospitalLoginPage() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="klau2mari2"
-            className="min-h-12 rounded-lg border border-[#E5E7EB] px-4 py-2.5 outline-none focus:border-[#0D7A5F]"
+            className="min-h-12 rounded-lg border border-[#E5E7EB] px-4 py-2.5 outline-none focus:border-[#2563EB]"
           />
           {errors.password ? <span className="text-xs text-[#DC2626]">{errors.password}</span> : null}
         </label>
         <Link
           href={valid ? (role === 'DOCTOR' ? '/hospital/doctor/patients' : '/hospital/dashboard') : '#'}
-          className="front-desk-target inline-flex items-center justify-center gap-2 bg-[#0D7A5F] text-white hover:bg-emerald-700"
+          className="front-desk-target inline-flex items-center justify-center gap-2 bg-[#2563EB] text-white hover:bg-blue-700"
         >
           <LogIn className="h-5 w-5" />
           Enter Hospital Workspace

@@ -104,10 +104,10 @@ export default function ChatPage() {
       <main className="mx-auto flex h-[calc(100vh-145px)] max-w-4xl flex-col p-4 md:p-6">
         <header className="mb-4 flex items-center justify-between rounded-card border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-3">
-            <BrainCircuit className="h-6 w-6 text-[#0D7A5F]" />
+            <BrainCircuit className="h-6 w-6 text-[#2563EB]" />
             <div>
               <h1 className="font-bold text-[#111827]">SynaptiVerse AI Triage</h1>
-              <p className="text-sm text-[#0D7A5F]">● Live</p>
+              <p className="text-sm text-[#2563EB]">● Live</p>
             </div>
           </div>
         </header>
@@ -123,7 +123,7 @@ export default function ChatPage() {
                   </div>
                 ) : message.kind === 'appointment' ? (
                   <div className="grid gap-3">
-                    <CalendarDays className="h-5 w-5 text-[#0D7A5F]" />
+                    <CalendarDays className="h-5 w-5 text-[#2563EB]" />
                     <p className="font-bold text-[#111827]">Today · 1:00 PM</p>
                     <p>{demoTriageResult.appointment_slot.specialist_name} · {demoTriageResult.appointment_slot.specialty}</p>
                   </div>
@@ -140,16 +140,16 @@ export default function ChatPage() {
             {typing ? (
               <ChatBubble role="bot">
                 <span className="inline-flex gap-1">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#0D7A5F]" />
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#0D7A5F] [animation-delay:120ms]" />
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#0D7A5F] [animation-delay:240ms]" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB]" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB] [animation-delay:120ms]" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-[#2563EB] [animation-delay:240ms]" />
                 </span>
               </ChatBubble>
             ) : null}
           </div>
         </section>
         {done ? (
-          <Link href="/queue-status" className="touch-target mt-4 inline-flex items-center justify-center gap-2 bg-[#0D7A5F] text-white hover:bg-emerald-700">
+          <Link href="/queue-status" className="touch-target mt-4 inline-flex items-center justify-center gap-2 bg-[#2563EB] text-white hover:bg-blue-700">
             View My Ticket
             <ArrowRight className="h-4 w-4" />
           </Link>
@@ -158,10 +158,10 @@ export default function ChatPage() {
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}
-            className="min-h-24 rounded-lg border border-[#E5E7EB] px-4 py-3 text-sm outline-none focus:border-[#0D7A5F]"
+            className="min-h-24 rounded-lg border border-[#E5E7EB] px-4 py-3 text-sm outline-none focus:border-[#2563EB]"
             placeholder="Write what you are experiencing..."
           />
-          <button className="front-desk-target inline-flex items-center justify-center gap-2 bg-[#0D7A5F] text-white hover:bg-emerald-700">
+          <button className="front-desk-target inline-flex items-center justify-center gap-2 bg-[#2563EB] text-white hover:bg-blue-700">
             Send
             <Send className="h-5 w-5" />
           </button>

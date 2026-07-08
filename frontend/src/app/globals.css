@@ -3,8 +3,8 @@
 @tailwind utilities;
 
 :root {
-  --color-brand: #0D7A5F;
-  --color-brand-light: #E6F4F0;
+  --color-brand: #2563EB;
+  --color-brand-light: #EFF6FF;
   --color-surface: #F7F8FA;
   --color-panel: #FFFFFF;
   --color-ink: #111827;
@@ -16,7 +16,7 @@
   --urgency-urgent-text: #D97706;
   --urgency-urgent-bg: #FFFBEB;
   --urgency-urgent-border: #FCD34D;
-  --urgency-routine-text: #0284C7;
+  --urgency-routine-text: #2563EB;
   --urgency-routine-bg: #EFF6FF;
   --urgency-routine-border: #93C5FD;
 }
@@ -56,7 +56,7 @@ select {
 
 .hero-radial {
   background:
-    radial-gradient(ellipse at 30% 50%, rgba(13,122,95,0.15) 0%, transparent 60%),
+    radial-gradient(ellipse at 30% 50%, rgba(37,99,235,0.18) 0%, transparent 60%),
     #0d1117;
 }
 

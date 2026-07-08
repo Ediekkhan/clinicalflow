@@ -16,7 +16,7 @@ export default function WhatsAppCanvasPage() {
         </div>
         <section className="rounded-lg border border-slate-200 bg-white p-4 md:p-6">
           <div className="flex items-center gap-3 border-b border-slate-200 pb-4">
-            <MessageCircle className="h-6 w-6 text-emerald-600" />
+            <MessageCircle className="h-6 w-6 text-blue-600" />
             <div>
               <h2 className="text-sm font-bold text-slate-900">Existing visit found</h2>
               <p className="text-sm text-slate-600">This phone already has an active clinic visit: SV-2026-9402.</p>
@@ -25,7 +25,7 @@ export default function WhatsAppCanvasPage() {
           <div className="mt-4 grid gap-3">
             {rows.map(([id, title, description]) => (
               <label key={id} className="data-row flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50">
-                <Radio className="h-5 w-5 text-emerald-600" />
+                <Radio className="h-5 w-5 text-blue-600" />
                 <span>
                   <span className="block text-sm font-bold text-slate-900">{title}</span>
                   <span className="block text-sm text-slate-600">{description}</span>

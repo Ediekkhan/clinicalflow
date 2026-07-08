@@ -1,83 +1,103 @@
 'use client';
 
 import Link from 'next/link';
-import { ArrowRight, Building2, LogIn, UserRound } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { Building2, LogIn, UserRound } from 'lucide-react';
+import { api } from '@/lib/auth';
+import { validators } from '@/lib/validators';
+
+const demoPatientCredentials = {
+  phone: '+234 803 456 7890',
+  password: '@Klau2mari2',
+};
+
+const demoPatientUser = {
+  id: 'demo-patient-adaeze',
+  first_name: 'Adaeze',
+  last_name: 'Chukwu',
+  phone: demoPatientCredentials.phone,
+  state: 'Akwa Ibom',
+  lga: 'Uyo',
+  health_card_id: 'SV-AKS-2026-00412',
+  created_at: '2026-06-20T00:00:00.000Z',
+};
+
+function normalizePhone(value: string) {
+  return value.replace(/\s+/g, '');
+}
 
 export default function PatientLoginPage() {
-  const [phone, setPhone] = useState('+234');
+  const router = useRouter();
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const errors = useMemo(
-    () => ({
-      phone: phone.length < 8 ? 'Enter your registered phone number.' : '',
-      password: password.length < 8 ? 'Enter your password.' : '',
-    }),
-    [phone, password],
-  );
-
-  const valid = !errors.phone && !errors.password;
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    const normalizedPhone = normalizePhone(phone);
+    const phoneError = validators.phone(normalizedPhone);
+    const passwordError = validators.password(password);
+    if (phoneError || passwordError) {
+      setError(phoneError ?? passwordError ?? 'Invalid login details');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.post('/api/v1/auth/patient/login', { phone: normalizedPhone, password });
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('synaptiverse_demo_patient');
+      }
+      router.push('/dashboard');
+    } catch (caught) {
+      if (normalizedPhone === normalizePhone(demoPatientCredentials.phone) && password === demoPatientCredentials.password) {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('synaptiverse_demo_patient', JSON.stringify(demoPatientUser));
+          window.localStorage.setItem('sv_user_type', 'PATIENT');
+        }
+        router.push('/dashboard');
+        return;
+      }
+      setError(caught instanceof Error ? caught.message : 'Invalid credentials');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#F7F8FA] p-4">
-      <section className="grid w-full max-w-md gap-5 rounded-card border border-[#E5E7EB] bg-white p-5 shadow-sm md:p-6">
+    <main className="grid min-h-screen place-items-center bg-[#0D1117] p-4">
+      <form onSubmit={submit} className="grid w-full max-w-md gap-5 rounded-2xl border border-white/10 bg-white p-6 shadow-xl">
         <div className="text-center">
-          <p className="font-display text-4xl text-[#0D7A5F]">SynaptiVerse</p>
-          <h1 className="mt-3 text-xl font-bold text-[#111827]">Patient Login</h1>
-          <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-            Sign in to view your health card, appointments, AI triage chat, and live queue status.
-          </p>
+          <p className="font-display text-4xl text-[#2563EB]">SynaptiVerse</p>
+          <h1 className="mt-3 text-xl font-bold text-slate-900">Patient Login</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">Sign in to view your health card, AI triage chat, and live queue status.</p>
         </div>
-
-        <label className="grid gap-2 text-sm font-bold text-[#111827]">
+        <label className="grid gap-2 text-sm font-bold text-slate-900">
           Phone number
-          <input
-            type="tel"
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            className="min-h-12 rounded-lg border border-[#E5E7EB] px-4 py-2.5 outline-none focus:border-[#0D7A5F]"
-          />
-          {errors.phone ? <span className="text-xs text-[#DC2626]">{errors.phone}</span> : null}
+          <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder={demoPatientCredentials.phone} className="min-h-12 rounded-lg border border-slate-200 px-4 py-2.5 outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100" />
         </label>
-
-        <label className="grid gap-2 text-sm font-bold text-[#111827]">
+        <label className="grid gap-2 text-sm font-bold text-slate-900">
           Password
-          <input
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            className="min-h-12 rounded-lg border border-[#E5E7EB] px-4 py-2.5 outline-none focus:border-[#0D7A5F]"
-          />
-          {errors.password ? <span className="text-xs text-[#DC2626]">{errors.password}</span> : null}
+          <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} className="min-h-12 rounded-lg border border-slate-200 px-4 py-2.5 outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100" />
         </label>
-
-        <Link
-          href={valid ? '/dashboard' : '#'}
-          className="front-desk-target inline-flex items-center justify-center gap-2 bg-[#0D7A5F] text-white hover:bg-emerald-700"
-        >
+        {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600">{error}</p> : null}
+        <button disabled={loading} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#1D4ED8] disabled:bg-slate-300">
           <LogIn className="h-5 w-5" />
-          Sign In
-        </Link>
-
-        <div className="grid gap-3 border-t border-[#E5E7EB] pt-4">
-          <Link
-            href="/signup"
-            className="touch-target inline-flex items-center justify-center gap-2 bg-[#E6F4F0] text-[#0D7A5F] hover:bg-emerald-100"
-          >
+          {loading ? 'Signing in...' : 'Sign In'}
+        </button>
+        <div className="grid gap-3 border-t border-slate-100 pt-4">
+          <Link href="/signup" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-blue-50 px-4 py-2.5 text-sm font-semibold text-[#2563EB]">
             <UserRound className="h-4 w-4" />
             Create patient account
           </Link>
-          <Link
-            href="/hospital/login"
-            className="touch-target inline-flex items-center justify-center gap-2 border border-[#E5E7EB] bg-white text-[#111827] hover:bg-[#F7F8FA]"
-          >
+          <Link href="/specialist/login" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700">
             <Building2 className="h-4 w-4" />
-            Hospital staff login
-            <ArrowRight className="h-4 w-4" />
+            Doctor / staff login
           </Link>
         </div>
-      </section>
+      </form>
     </main>
   );
 }
-

@@ -32,7 +32,7 @@ export default function HospitalSettingsPage() {
                 <p className="text-sm text-[#6B7280]">Stops patient triage intake for this hospital tenant.</p>
               </div>
             </div>
-            <button onClick={() => setPaused((current) => !current)} className={cn('front-desk-target inline-flex items-center gap-2', paused ? 'bg-[#DC2626] text-white' : 'bg-[#0D7A5F] text-white')}>
+            <button onClick={() => setPaused((current) => !current)} className={cn('front-desk-target inline-flex items-center gap-2', paused ? 'bg-[#DC2626] text-white' : 'bg-[#2563EB] text-white')}>
               {paused ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
               {paused ? 'Paused' : 'Active'}
             </button>
@@ -41,7 +41,7 @@ export default function HospitalSettingsPage() {
         <section className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-card border border-[#E5E7EB] bg-white p-4 shadow-sm">
             <div className="flex items-center gap-2">
-              <Smartphone className="h-5 w-5 text-[#0D7A5F]" />
+              <Smartphone className="h-5 w-5 text-[#2563EB]" />
               <p className="text-sm font-bold uppercase tracking-wider text-[#6B7280]">SMS Route</p>
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -49,7 +49,7 @@ export default function HospitalSettingsPage() {
                 <button
                   key={route}
                   onClick={() => setSmsRoute(route)}
-                  className={cn('front-desk-target border', smsRoute === route ? 'border-[#0D7A5F] bg-[#E6F4F0] text-[#0D7A5F]' : 'border-[#E5E7EB] bg-white text-[#6B7280]')}
+                  className={cn('front-desk-target border', smsRoute === route ? 'border-[#2563EB] bg-[#e0f2fe] text-[#2563EB]' : 'border-[#E5E7EB] bg-white text-[#6B7280]')}
                 >
                   {route}
                 </button>
@@ -59,10 +59,10 @@ export default function HospitalSettingsPage() {
           <div className="rounded-card border border-[#E5E7EB] bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
-                <MessageSquare className="h-5 w-5 text-[#0D7A5F]" />
+                <MessageSquare className="h-5 w-5 text-[#2563EB]" />
                 <p className="text-sm font-bold uppercase tracking-wider text-[#6B7280]">WhatsApp Intake</p>
               </div>
-              <button onClick={() => setWhatsappEnabled((current) => !current)} className="rounded-lg p-3 text-[#0D7A5F] hover:bg-[#E6F4F0]" aria-label="Toggle WhatsApp channel">
+              <button onClick={() => setWhatsappEnabled((current) => !current)} className="rounded-lg p-3 text-[#2563EB] hover:bg-[#e0f2fe]" aria-label="Toggle WhatsApp channel">
                 {whatsappEnabled ? <ToggleRight className="h-6 w-6" /> : <ToggleLeft className="h-6 w-6" />}
               </button>
             </div>
@@ -70,7 +70,7 @@ export default function HospitalSettingsPage() {
         </section>
         <section className="rounded-card border border-[#E5E7EB] bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-[#0D7A5F]" />
+            <Users className="h-5 w-5 text-[#2563EB]" />
             <p className="text-sm font-bold uppercase tracking-wider text-[#6B7280]">Hospital Staff</p>
           </div>
           <div className="mt-4 overflow-hidden rounded-card border border-[#E5E7EB]">

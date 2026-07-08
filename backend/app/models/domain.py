@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -61,6 +62,9 @@ class Staff(Base):
     hashed_pin: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    failed_pin_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    is_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     tenant: Mapped[Tenant] = relationship(back_populates="staff")
 
@@ -74,8 +78,8 @@ class Patient(Base):
     __tablename__ = "patients"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    tenant_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE")
     )
     full_name: Mapped[str] = mapped_column(String(160), nullable=False)
     phone: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -85,6 +89,7 @@ class Patient(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    pending_deletion: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -282,7 +287,10 @@ class AuditLog(Base):
     actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     actor_type: Mapped[str | None] = mapped_column(String(24))
     action: Mapped[str] = mapped_column(String(240), nullable=False)
+    resource_type: Mapped[str | None] = mapped_column(String(30))
+    resource_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     ip_address: Mapped[str | None] = mapped_column(INET)
+    user_agent: Mapped[str | None] = mapped_column(Text)
     log_metadata: Mapped[dict | None] = mapped_column("metadata", JSONB)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

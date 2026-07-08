@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 const badgeClasses: Record<UrgencyLevel, string> = {
   CRITICAL: 'border-[#FCA5A5] bg-[#FEF2F2] text-[#DC2626]',
   URGENT: 'border-[#FCD34D] bg-[#FFFBEB] text-[#D97706]',
-  ROUTINE: 'border-[#93C5FD] bg-[#EFF6FF] text-[#0284C7]',
+  ROUTINE: 'border-[#93C5FD] bg-[#EFF6FF] text-[#1D4ED8]',
 };
 
 export function UrgencyBadge({ level, className }: { level: UrgencyLevel; className?: string }) {

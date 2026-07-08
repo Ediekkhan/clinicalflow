@@ -31,7 +31,7 @@ export default function SmsCanvasPage() {
           {templates.map((template) => (
             <article key={template.title} className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex items-center gap-2">
-                <MessageSquareText className="h-5 w-5 text-emerald-600" />
+                <MessageSquareText className="h-5 w-5 text-blue-600" />
                 <h2 className="text-sm font-medium uppercase tracking-wider text-slate-500">{template.title}</h2>
               </div>
               <p className="mt-3 font-mono text-sm leading-6 text-slate-900">{template.body}</p>

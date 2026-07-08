@@ -13,7 +13,7 @@ const copy: Record<Mode, string> = {
 };
 
 const classes: Record<Mode, string> = {
-  connected: 'bg-emerald-600 text-white',
+  connected: 'bg-blue-600 text-white',
   reconnecting: 'bg-amber-500 text-white animate-pulse',
   offline: 'bg-rose-600 text-white',
 };

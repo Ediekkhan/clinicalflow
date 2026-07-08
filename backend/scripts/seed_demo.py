@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import insert, select
 
 from app.core.config import get_settings
-from app.core.security import hash_pin
+from app.core.security import hash_password, hash_pin
 from app.db.session import SessionLocal, set_tenant_context
 from app.models.domain import Patient, ProviderSlot, Specialist, Staff, Tenant
 
@@ -36,13 +36,13 @@ async def main() -> None:
                         Staff(
                             tenant_id=tenant_id,
                             role="NURSE",
-                            hashed_pin=hash_pin("1234"),
+                            hashed_pin=hash_pin("4829"),
                             full_name="Nurse Iniobong Akpan",
                         ),
                         Staff(
                             tenant_id=tenant_id,
                             role="ADMIN",
-                            hashed_pin=hash_pin("4321"),
+                            hashed_pin=hash_pin("7391"),
                             full_name="Admin Chiamaka Okafor",
                         ),
                     ]
@@ -60,7 +60,7 @@ async def main() -> None:
                             tenant_id=tenant_id,
                             full_name="Dr. Udo Okon",
                             specialty="General Practitioner",
-                            hashed_password=hash_pin("2026"),
+                            hashed_password=hash_password("DemoPass2026"),
                             phone="+2348090012233",
                             email="dr.udo@synaptiverse.ng",
                         ),
@@ -68,7 +68,7 @@ async def main() -> None:
                             tenant_id=tenant_id,
                             full_name="Dr. Ada Balogun",
                             specialty="Cardiologist",
-                            hashed_password=hash_pin("2026"),
+                            hashed_password=hash_password("DemoPass2026"),
                             phone="+2348090012244",
                             email="dr.ada@synaptiverse.ng",
                         ),
@@ -84,7 +84,7 @@ async def main() -> None:
                         date_of_birth=datetime(1998, 3, 15, tzinfo=UTC).date(),
                         gender="MALE",
                         card_number="SV-AKS-2026-00412",
-                        hashed_password=hash_pin("2026"),
+                        hashed_password=hash_password("DemoPass2026"),
                         latitude=5.0377,
                         longitude=7.9128,
                     )

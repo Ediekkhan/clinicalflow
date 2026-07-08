@@ -1,4 +1,3 @@
-from app.core.middleware import TenantContextMiddleware
+from app.auth.middleware import TenantContextMiddleware
 
 __all__ = ["TenantContextMiddleware"]
-

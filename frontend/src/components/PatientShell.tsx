@@ -23,29 +23,29 @@ export function PatientShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto max-w-7xl p-4 md:p-6">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <Link href="/dashboard" className="font-display block truncate text-3xl text-[#0D7A5F]">
+              <Link href="/dashboard" className="font-display block truncate text-3xl text-[#2563EB]">
                 SynaptiVerse
               </Link>
-              <span className="mt-1 inline-flex max-w-full rounded-badge bg-[#E6F4F0] px-3 py-1 font-mono text-xs font-bold text-[#0D7A5F]">
+              <span className="mt-1 inline-flex max-w-full rounded-badge bg-[#e0f2fe] px-3 py-1 font-mono text-xs font-bold text-[#2563EB]">
                 <span className="truncate">{demoPatient.card_number}</span>
               </span>
             </div>
             <nav className="hidden items-center gap-2 lg:flex">
               {nav.map((item) => (
-                <Link key={item.href} href={item.href} className="inline-flex min-h-12 items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-[#6B7280] hover:bg-[#E6F4F0] hover:text-[#0D7A5F]">
+                <Link key={item.href} href={item.href} className="inline-flex min-h-12 items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-[#6B7280] hover:bg-[#e0f2fe] hover:text-[#2563EB]">
                   <item.icon className="h-4 w-4" />
                   {item.label}
                 </Link>
               ))}
             </nav>
             <div className="flex items-center gap-2">
-              <button className="hidden h-12 w-12 place-items-center rounded-lg text-[#111827] hover:bg-[#E6F4F0] sm:grid" aria-label="Notifications">
+              <button className="hidden h-12 w-12 place-items-center rounded-lg text-[#111827] hover:bg-[#e0f2fe] sm:grid" aria-label="Notifications">
                 <Bell className="h-5 w-5" />
               </button>
               <button
                 type="button"
                 onClick={() => setMenuOpen((current) => !current)}
-                className="grid h-12 w-12 place-items-center rounded-lg text-[#111827] hover:bg-[#E6F4F0] lg:hidden"
+                className="grid h-12 w-12 place-items-center rounded-lg text-[#111827] hover:bg-[#e0f2fe] lg:hidden"
                 aria-expanded={menuOpen}
                 aria-label="Toggle patient navigation"
               >
@@ -66,7 +66,7 @@ export function PatientShell({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     onClick={() => setMenuOpen(false)}
-                    className="inline-flex min-h-12 items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-bold text-[#6B7280] hover:bg-[#E6F4F0] hover:text-[#0D7A5F]"
+                    className="inline-flex min-h-12 items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-bold text-[#6B7280] hover:bg-[#e0f2fe] hover:text-[#2563EB]"
                   >
                     <item.icon className="h-4 w-4" />
                     {item.label}

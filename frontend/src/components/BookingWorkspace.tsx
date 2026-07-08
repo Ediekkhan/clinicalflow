@@ -43,7 +43,7 @@ export function BookingWorkspace() {
         <input
           value={phone}
           onChange={(event) => setPhone(event.target.value)}
-          className="rounded-lg border border-slate-300 px-4 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+          className="rounded-lg border border-slate-300 px-4 py-2.5 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           required
         />
       </label>
@@ -52,14 +52,14 @@ export function BookingWorkspace() {
         <textarea
           value={complaint}
           onChange={(event) => setComplaint(event.target.value)}
-          className="min-h-32 rounded-lg border border-slate-300 px-4 py-2.5 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+          className="min-h-32 rounded-lg border border-slate-300 px-4 py-2.5 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           placeholder="Example: Hot body and headache since yesterday"
           required
         />
       </label>
       <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex items-center gap-2">
-          <CalendarDays className="h-5 w-5 text-emerald-600" />
+          <CalendarDays className="h-5 w-5 text-blue-600" />
           <p className="text-sm font-medium uppercase tracking-wider text-slate-500">Open Time Slots</p>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -71,7 +71,7 @@ export function BookingWorkspace() {
               className={cn(
                 'front-desk-target border text-left',
                 selectedSlot === slot.starts_at
-                  ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                  ? 'border-blue-600 bg-blue-50 text-blue-700'
                   : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
               )}
             >
@@ -85,7 +85,7 @@ export function BookingWorkspace() {
       </section>
       <button
         type="submit"
-        className="front-desk-target inline-flex items-center justify-center gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+        className="front-desk-target inline-flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700"
       >
         {status === 'saving' ? <Loader2 className="h-5 w-5 animate-spin" /> : status === 'done' ? <CheckCircle2 className="h-5 w-5" /> : <Send className="h-5 w-5" />}
         {status === 'done' ? 'Booking sent' : 'Submit clinic ticket'}

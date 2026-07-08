@@ -34,7 +34,7 @@ export function NotificationBell() {
             </button>
           </div>
           <div className="p-4">
-            <button onClick={markAllRead} className="touch-target w-full bg-[#0D7A5F] text-white hover:bg-emerald-700">Mark All Read</button>
+            <button onClick={markAllRead} className="touch-target w-full bg-[#2563EB] text-white hover:bg-blue-700">Mark All Read</button>
           </div>
           <div className="grid gap-3 overflow-y-auto p-4 pt-0">
             {notifications.filter((item) => !item.is_read).map((item) => (
@@ -46,7 +46,7 @@ export function NotificationBell() {
                   </div>
                   {item.urgency_level ? <UrgencyBadge level={item.urgency_level} /> : null}
                 </div>
-                <Link href="/hospital/doctor/patients" className="mt-4 inline-flex min-h-12 items-center text-sm font-bold text-[#0D7A5F]">
+                <Link href="/hospital/doctor/patients" className="mt-4 inline-flex min-h-12 items-center text-sm font-bold text-[#2563EB]">
                   View Patient →
                 </Link>
               </article>

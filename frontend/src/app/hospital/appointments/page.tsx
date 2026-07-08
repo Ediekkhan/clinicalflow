@@ -1,13 +1,5 @@
-import { AppointmentScheduler } from '@/components/AppointmentScheduler';
-import { HospitalShell } from '@/components/HospitalShell';
+import { EntityDashboard } from '@/components/entity/EntityDashboard';
 
 export default function HospitalAppointmentsPage() {
-  return (
-    <HospitalShell>
-      <main className="mx-auto max-w-7xl p-4 md:p-6">
-        <AppointmentScheduler />
-      </main>
-    </HospitalShell>
-  );
+  return <EntityDashboard entity="hospital" view="appointments" title="Hospital Appointments" subtitle="Scheduled consultations across departments and specialists." />;
 }
-

@@ -26,7 +26,7 @@ export function HospitalShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto max-w-7xl p-4 md:p-6">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <Link href="/hospital/dashboard" className="font-display block truncate text-3xl text-emerald-300">
+              <Link href="/hospital/dashboard" className="font-display block truncate text-3xl text-blue-300">
                 SynaptiVerse Hospital
               </Link>
               <p className="mt-1 max-w-[70vw] truncate text-sm text-slate-300 md:max-w-none">

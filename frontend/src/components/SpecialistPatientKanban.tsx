@@ -62,7 +62,7 @@ export function SpecialistPatientKanban({ assignedOnly = false }: { assignedOnly
                     {ticket.wait_minutes + tick} min wait
                   </p>
                   {ticket.pendingSync ? <p className="mt-3 rounded-badge bg-[#FFFBEB] px-3 py-1 text-xs font-bold text-[#D97706]">⏱️ Pending Sync</p> : null}
-                  <button onClick={() => setSelected(ticket)} className="touch-target mt-4 inline-flex w-full items-center justify-center gap-2 bg-[#0D7A5F] text-white hover:bg-emerald-700">
+                  <button onClick={() => setSelected(ticket)} className="touch-target mt-4 inline-flex w-full items-center justify-center gap-2 bg-[#2563EB] text-white hover:bg-blue-700">
                     <FileText className="h-4 w-4" />
                     View Details
                   </button>
@@ -80,7 +80,7 @@ export function SpecialistPatientKanban({ assignedOnly = false }: { assignedOnly
               <div>
                 <p className="text-sm font-bold uppercase tracking-wider text-[#6B7280]">Patient Details</p>
                 <h2 className="font-display text-4xl text-[#111827]">{selected.patient_name}</h2>
-                <p className="font-mono text-sm font-bold text-[#0D7A5F]">{selected.patient_card_number}</p>
+                <p className="font-mono text-sm font-bold text-[#2563EB]">{selected.patient_card_number}</p>
               </div>
               <section className="rounded-card bg-[#F7F8FA] p-4">
                 <p className="text-sm font-bold uppercase tracking-wider text-[#6B7280]">Symptoms</p>
@@ -92,7 +92,7 @@ export function SpecialistPatientKanban({ assignedOnly = false }: { assignedOnly
                 <p className="text-sm text-[#6B7280]">{selected.assigned_specialty} · {new Intl.DateTimeFormat('en-NG', { timeStyle: 'short' }).format(new Date(selected.appointment_slot))}</p>
               </section>
               <div className="grid gap-3 sm:grid-cols-3">
-                <button onClick={() => updateStatus(selected.id, 'BEING_SEEN')} className="front-desk-target bg-[#0D7A5F] text-white">Mark Being Seen</button>
+                <button onClick={() => updateStatus(selected.id, 'BEING_SEEN')} className="front-desk-target bg-[#2563EB] text-white">Mark Being Seen</button>
                 <button onClick={() => updateStatus(selected.id, 'RESOLVED')} className="front-desk-target bg-[#111827] text-white">Mark Resolved</button>
                 <button onClick={() => escalate(selected.id)} className="front-desk-target bg-[#FEF2F2] text-[#DC2626]">Escalate to CRITICAL</button>
               </div>

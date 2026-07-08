@@ -21,7 +21,7 @@ export default function HospitalSchedulePage() {
             <p className="text-sm font-bold uppercase tracking-wider text-[#6B7280]">Doctor Schedule</p>
             <h1 className="font-display text-4xl text-[#111827] md:text-5xl">My hospital calendar</h1>
           </div>
-          <button onClick={() => setBlocked((current) => [...current, '15:00'])} className="front-desk-target inline-flex items-center gap-2 bg-[#0D7A5F] text-white">
+          <button onClick={() => setBlocked((current) => [...current, '15:00'])} className="front-desk-target inline-flex items-center gap-2 bg-[#2563EB] text-white">
             <CalendarPlus className="h-5 w-5" />
             Block Time
           </button>
@@ -34,7 +34,7 @@ export default function HospitalSchedulePage() {
               <button
                 key={hour}
                 onClick={() => setSelected(hour)}
-                className={cn('min-h-32 rounded-card border p-4 text-left shadow-sm', unavailable ? 'border-[#E5E7EB] bg-slate-100 text-[#6B7280]' : 'border-[#E5E7EB] bg-white hover:border-[#0D7A5F]')}
+                className={cn('min-h-32 rounded-card border p-4 text-left shadow-sm', unavailable ? 'border-[#E5E7EB] bg-slate-100 text-[#6B7280]' : 'border-[#E5E7EB] bg-white hover:border-[#2563EB]')}
               >
                 <p className="font-mono font-bold">{hour}</p>
                 {unavailable ? (

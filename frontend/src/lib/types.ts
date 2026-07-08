@@ -72,9 +72,9 @@ export const urgencyMeta: Record<
   ROUTINE: {
     label: 'Routine',
     heading: 'Standard Care',
-    fill: 'bg-sky-50',
-    text: 'text-sky-600',
-    border: 'border-sky-200',
+    fill: 'bg-blue-50',
+    text: 'text-blue-600',
+    border: 'border-blue-200',
   },
 };
 

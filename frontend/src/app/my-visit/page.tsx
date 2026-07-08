@@ -19,12 +19,12 @@ export default function MyVisitPage() {
         <section className="rounded-lg border-2 border-dashed border-slate-300 bg-white p-6 text-center shadow-sm">
           <p className="text-sm font-medium uppercase tracking-wider text-slate-500">[PROJECT_NAME] Visit Pass</p>
           <p className="mt-4 break-words font-mono text-3xl font-bold tracking-tight text-slate-900 sm:text-5xl">{active.ticket_number}</p>
-          <p className="mt-4 text-2xl font-bold tracking-tight text-emerald-700">You are #3 in line for Room 2</p>
+          <p className="mt-4 text-2xl font-bold tracking-tight text-blue-700">You are #3 in line for Room 2</p>
           <p className="mt-2 text-sm text-slate-600">{active.assigned_specialty} · {active.urgency_level}</p>
         </section>
         <section className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-center gap-2">
-            <UsersRound className="h-5 w-5 text-emerald-600" />
+            <UsersRound className="h-5 w-5 text-blue-600" />
             <p className="text-sm font-medium uppercase tracking-wider text-slate-500">Shared Phone Group</p>
           </div>
           <div className="mt-4 grid gap-2">
@@ -35,7 +35,7 @@ export default function MyVisitPage() {
                 className={cn(
                   'data-row flex items-center justify-between rounded-lg border text-left',
                   active.id === ticket.id
-                    ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
                 )}
               >

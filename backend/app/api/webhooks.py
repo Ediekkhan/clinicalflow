@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_tenant_id
 from app.channels import sms, whatsapp
 from app.db.session import get_session
+from app.middleware.rate_limit_config import RATE_LIMITS
+from app.middleware.rate_limiter import check_rate_limit, get_rate_limit_identifier
 from app.schemas.domain import IncomingMessage, TicketCreate, TicketRead
 from app.services.appointments import create_appointment, list_open_slots
 from app.services.lexicon import extract_symptoms
@@ -16,9 +18,17 @@ router = APIRouter(prefix="/webhooks", tags=["channel-webhooks"])
 @router.post("/whatsapp")
 async def whatsapp_webhook(
     payload: IncomingMessage,
+    request: Request,
     tenant_id=Depends(current_tenant_id),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, object]:
+    config = RATE_LIMITS["webhook:whatsapp"]
+    await check_rate_limit(
+        key="webhook:whatsapp",
+        limit=config["requests"],
+        window_seconds=config["window_seconds"],
+        identifier=await get_rate_limit_identifier(request),
+    )
     if payload.intent != "REGISTER_NEW_PATIENT":
         duplicate = await detect_duplicate_identity(session, payload.phone)
         if duplicate:
@@ -91,4 +101,3 @@ async def sms_webhook(
         ),
     )
     return {"message": sms.queue_assignment(ticket.ticket_number, ticket.urgency_level)}
-

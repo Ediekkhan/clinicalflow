@@ -1,12 +1,14 @@
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import current_tenant_id
 from app.db.session import get_session
+from app.middleware.rate_limit_config import RATE_LIMITS
+from app.middleware.rate_limiter import check_rate_limit, get_rate_limit_identifier
 from app.schemas.domain import AppointmentCreate, AppointmentRead, ProviderSlotRead
 from app.services.appointments import create_appointment, list_open_slots, lock_slot
 
@@ -32,9 +34,17 @@ async def open_slots(
 @router.post("", response_model=dict[str, object])
 async def book_appointment(
     payload: AppointmentCreate,
+    request: Request,
     tenant_id: UUID = Depends(current_tenant_id),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, object]:
+    config = RATE_LIMITS["appointments:create"]
+    await check_rate_limit(
+        key="appointments:create",
+        limit=config["requests"],
+        window_seconds=config["window_seconds"],
+        identifier=await get_rate_limit_identifier(request),
+    )
     try:
         appointment, outbound_message = await create_appointment(
             session,
@@ -63,4 +73,3 @@ async def set_slot_lock(
     except LookupError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return ProviderSlotRead.model_validate(slot)
-

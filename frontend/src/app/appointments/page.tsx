@@ -23,12 +23,12 @@ export default function PatientAppointmentsPage() {
               </div>
               <div className="mt-5 grid gap-3 text-sm text-[#111827] md:grid-cols-3">
                 <p className="inline-flex items-center gap-2">
-                  <CalendarDays className="h-4 w-4 text-[#0D7A5F]" />
+                  <CalendarDays className="h-4 w-4 text-[#2563EB]" />
                   {new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ticket.appointment_slot))}
                 </p>
                 <p>{ticket.assigned_specialty}</p>
                 <p className="inline-flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-[#0D7A5F]" />
+                  <MapPin className="h-4 w-4 text-[#2563EB]" />
                   Uyo Family Clinic
                 </p>
               </div>

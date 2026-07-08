@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.schemas.validators import PhoneValidator, SymptomTextValidator
 
 Channel = Literal["WHATSAPP", "USSD", "WEB", "SMS"]
 UrgencyLevel = Literal["CRITICAL", "URGENT", "ROUTINE"]
@@ -15,6 +17,23 @@ class TicketBase(BaseModel):
     channel: Channel = "WEB"
     raw_intake_text: str | None = None
     appointment_slot: datetime | None = None
+
+    @field_validator("customer_phone")
+    @classmethod
+    def validate_customer_phone(cls, value: str) -> str:
+        return PhoneValidator.validate_nigerian_phone(value)
+
+    @field_validator("account_group_phone")
+    @classmethod
+    def validate_account_phone(cls, value: str | None) -> str | None:
+        return PhoneValidator.validate_nigerian_phone(value) if value else value
+
+    @field_validator("raw_intake_text")
+    @classmethod
+    def validate_raw_intake(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return value
+        return SymptomTextValidator.validate_symptom_text(value)
 
 
 class TicketCreate(TicketBase):
@@ -62,6 +81,11 @@ class IncomingMessage(BaseModel):
     intent: Literal["TRIAGE", "REGISTER_NEW_PATIENT", "CANCEL", "BOOK_SLOT"] = "TRIAGE"
     selected_slot_id: UUID | None = None
 
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        return PhoneValidator.validate_nigerian_phone(value)
+
 
 class ProviderSlotRead(BaseModel):
     id: UUID
@@ -106,4 +130,3 @@ class WebSocketEvent(BaseModel):
     tenant_id: UUID
     payload: dict[str, object]
     priority: Literal["LOW", "NORMAL", "HIGH"] = "NORMAL"
-

@@ -24,13 +24,19 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="replace-me-before-production", alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=480, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    cookie_secure: bool = Field(default=False, alias="COOKIE_SECURE")
     hospital_account_password: str = Field(default="klau2mari2", alias="HOSPITAL_ACCOUNT_PASSWORD")
     anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
     demo_tenant_id: UUID = Field(
         default=UUID("00000000-0000-4000-8000-000000000001"),
         alias="DEMO_TENANT_ID",
     )
-    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://app.synaptiverse.ng",
+        "https://staging.synaptiverse.ng",
+    ]
 
 
 @lru_cache

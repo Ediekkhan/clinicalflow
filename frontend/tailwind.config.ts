@@ -32,12 +32,23 @@ const config: Config = {
           '0%, 100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(220, 38, 38, 0)' },
           '50%': { transform: 'scale(1.015)', boxShadow: '0 0 0 6px rgba(220, 38, 38, 0.18)' },
         },
+        'scroll-left': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
+        'scroll-right': {
+          '0%': { transform: 'translateX(-50%)' },
+          '100%': { transform: 'translateX(0)' },
+        },
       },
       animation: {
         'overtake-pulse': 'overtakePulse 0.7s ease-in-out 3',
+        'scroll-left': 'scroll-left 40s linear infinite',
+        'scroll-right': 'scroll-right 40s linear infinite',
       },
       borderRadius: {
-        card: '10px',
+        card: '16px',
+        button: '10px',
         badge: '6px',
       },
     },
