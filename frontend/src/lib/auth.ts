@@ -1,5 +1,7 @@
 'use client';
 
+import { getDemoApiResponse } from '@/lib/demo-session';
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
 
 async function refreshSession() {
@@ -10,6 +12,9 @@ async function refreshSession() {
 }
 
 async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object, retry = true) {
+  const demoResponse = getDemoApiResponse(method, url, body);
+  if (demoResponse !== undefined) return demoResponse;
+
   const response = await fetch(`${API_BASE}${url}`, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
@@ -42,4 +47,3 @@ export const api = {
   patch: (url: string, body: object) => request('PATCH', url, body),
   delete: (url: string) => request('DELETE', url),
 };
-

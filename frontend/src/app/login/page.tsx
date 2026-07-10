@@ -7,22 +7,6 @@ import { Building2, LogIn, UserRound } from 'lucide-react';
 import { api } from '@/lib/auth';
 import { validators } from '@/lib/validators';
 
-const demoPatientCredentials = {
-  phone: '+234 803 456 7890',
-  password: '@Klau2mari2',
-};
-
-const demoPatientUser = {
-  id: 'demo-patient-adaeze',
-  first_name: 'Adaeze',
-  last_name: 'Chukwu',
-  phone: demoPatientCredentials.phone,
-  state: 'Akwa Ibom',
-  lga: 'Uyo',
-  health_card_id: 'SV-AKS-2026-00412',
-  created_at: '2026-06-20T00:00:00.000Z',
-};
-
 function normalizePhone(value: string) {
   return value.replace(/\s+/g, '');
 }
@@ -47,19 +31,8 @@ export default function PatientLoginPage() {
     setLoading(true);
     try {
       await api.post('/api/v1/auth/patient/login', { phone: normalizedPhone, password });
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem('synaptiverse_demo_patient');
-      }
       router.push('/dashboard');
     } catch (caught) {
-      if (normalizedPhone === normalizePhone(demoPatientCredentials.phone) && password === demoPatientCredentials.password) {
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem('synaptiverse_demo_patient', JSON.stringify(demoPatientUser));
-          window.localStorage.setItem('sv_user_type', 'PATIENT');
-        }
-        router.push('/dashboard');
-        return;
-      }
       setError(caught instanceof Error ? caught.message : 'Invalid credentials');
     } finally {
       setLoading(false);
@@ -76,7 +49,7 @@ export default function PatientLoginPage() {
         </div>
         <label className="grid gap-2 text-sm font-bold text-slate-900">
           Phone number
-          <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder={demoPatientCredentials.phone} className="min-h-12 rounded-lg border border-slate-200 px-4 py-2.5 outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100" />
+          <input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone number" className="min-h-12 rounded-lg border border-slate-200 px-4 py-2.5 outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100" />
         </label>
         <label className="grid gap-2 text-sm font-bold text-slate-900">
           Password

@@ -1,89 +1,101 @@
-# [PROJECT_NAME] Healthtech Triage MVP
+# SynaptiVerse
 
-Production-oriented MVP scaffold for a Nigerian B2B multi-tenant clinic triage and appointment scheduling platform. It includes a FastAPI backend, PostgreSQL tenant isolation with RLS, Neo4j deterministic clinical routing, Redis cached local lexicons, channel webhook stubs, and a Next.js App Router frontend with all 11 requested viewports.
+Frontend-only demo build for a multi-portal healthcare coordination platform.
 
-## Structure
+This repository currently contains the SynaptiVerse Next.js frontend only. The backend has been removed from this codebase, so the app is set up for demo use without a live API. Demo sessions are stored locally in the browser and every dashboard renders from generic API-shaped data or empty states until a real backend is connected.
 
-- `backend/` - FastAPI app, SQLAlchemy models, RLS-aware services, WebSockets, channel stubs.
-- `backend/migrations/001_init.sql` - PostgreSQL schema, constraints, indexes, and RLS policies.
-- `backend/scripts/neo4j_seed.cypher` - Read-only clinical ontology seed.
-- `backend/scripts/seed_demo.py` - Demo Uyo tenant, staff PINs, and provider slots.
-- `frontend/` - Next.js App Router, Tailwind tokens, realtime queue dashboard, appointment grid, public/patient screens.
-- `docker-compose.yml` - PostgreSQL, Redis, and Neo4j for local development.
+## Current Status
 
-## Local Services
+- Frontend: Next.js App Router, React, TypeScript, Tailwind CSS.
+- Backend: intentionally removed from this repository.
+- Demo mode: enabled from `/signup` for every role.
+- Mock records: removed from dashboard displays.
+- API calls: routed through the frontend API client with a local demo fallback when demo mode is active.
 
-```powershell
-Copy-Item .env.example .env
-docker compose up -d postgres redis neo4j
+## Demo Sign-In
+
+Run the app, open `/signup`, and choose any workspace. The role card creates a local demo session and routes directly to that dashboard.
+
+Available demo workspaces:
+
+- Patient: `/dashboard`
+- Doctor / Specialist: `/specialist/dashboard`
+- Hospital / Clinic: `/hospital/dashboard`
+- Clinic: `/clinic/dashboard`
+- Pharmacy: `/pharmacy/dashboard`
+- Laboratory: `/lab/dashboard`
+- Nurse: `/nurse/dashboard`
+- HMO / Insurance: `/hmo/dashboard`
+- Government: `/moh/dashboard`
+- Admin: `/dashboard/admin`
+
+Direct role URLs also work, for example:
+
+```text
+/signup?type=specialist
+/signup?type=pharmacy
+/signup?type=admin
 ```
 
-Load the Neo4j seed through the Neo4j browser at `http://localhost:7474` or run the Cypher file with your preferred Neo4j client.
+Admin demo access sets a local role cookie so the protected admin route can be opened during demos.
 
-## Backend
+## Logout
 
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e .[dev]
-python scripts/seed_demo.py
-uvicorn app.main:app --reload --port 8000
-```
+Every dashboard shell includes a logout control. `/logout` clears the local demo session, demo card details, and demo role cookie, then returns to `/signup`.
 
-Important routes:
-
-- `GET /api/v1/health`
-- `GET /api/v1/tickets`
-- `POST /api/v1/tickets`
-- `PATCH /api/v1/tickets/{id}/escalate`
-- `GET /api/v1/appointments/slots`
-- `POST /api/v1/webhooks/whatsapp`
-- `POST /api/v1/webhooks/sms`
-- `WS /api/v1/ws/triage`
-
-Tenant context is accepted from a bearer token or `X-Tenant-Id`. The demo tenant is `00000000-0000-4000-8000-000000000001`.
-
-Demo PINs after seeding:
-
-- Nurse: `1234`
-- Admin: `4321`
-
-## Frontend
+## Local Development
 
 ```powershell
 cd frontend
 npm install
-npm run dev
+npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
-Routes:
+Open:
 
-- `/` - public marketing site and CMD ROI calculator.
-- `/book` - patient self-service booking.
-- `/my-visit` - live digital ticket view with shared-phone switching.
-- `/channels/whatsapp` - WhatsApp template canvas.
-- `/channels/sms` - SMS text template canvas.
-- `/auth/login` - role and PIN authentication gateway.
-- `/dashboard/queue` - realtime nurse triage Kanban with forced overtake.
-- `/dashboard/appointments` - provider calendar grid with drag/drop and lockout controls.
-- `/dashboard/admin/settings` - tenant channel and staff control panel.
-- `/dashboard/waiting-room` - high-contrast TV display with native speech synthesis.
+```text
+http://127.0.0.1:3000/signup
+```
 
-## RLS Model
+## Validation
 
-The backend sets the transaction-local PostgreSQL variable using `set_config('app.current_tenant_id', tenant_id, true)`, equivalent to `SET LOCAL`, before business queries run. Policies compare each row’s `tenant_id` against `current_setting('app.current_tenant_id', true)::uuid`.
+Useful checks:
 
-## Realtime And Offline Behavior
+```powershell
+cd frontend
+npm run typecheck
+npm run build
+```
 
-The nurse dashboard opens `/api/v1/ws/triage` for all realtime queue updates. Local actions update the UI immediately. During network loss, actions are stored in `localStorage`, affected cards show reduced opacity with `⏱️ Pending Sync`, and the sticky toast switches between connected, reconnecting, and offline states.
+The current demo build has been typechecked with:
 
-# clinicalflow
-# clinicalflow
-# clinicalflow
-# clinicalflow
-# clinicalflow
-# clinicalflow
-# clinicalflow
-# clinicalflow
-# clinicalflow
+```powershell
+npm run typecheck
+```
+
+## API Integration Notes
+
+The backend developer owns API implementations, authentication, persistence, WebSockets, payments, credential verification, audit logging, and deployment infrastructure. The frontend expects the eventual backend to provide endpoints under `/api/v1/...`.
+
+When a real backend is available:
+
+- Keep `NEXT_PUBLIC_API_BASE_URL` or `NEXT_PUBLIC_API_BASE` pointed at the API host.
+- Remove or disable the local demo session path when production authentication is ready.
+- Keep the loading, empty, and error states in place so dashboards do not show fallback mock records.
+
+## Project Layout
+
+```text
+frontend/
+  src/app/           App Router pages
+  src/components/    Shared UI and dashboard components
+  src/hooks/         Frontend hooks
+  src/lib/           API client, dashboard config, demo session helpers, types
+```
+
+## Notes For Demo Day
+
+- Use `/signup` as the entry point.
+- Tap any role to enter its dashboard.
+- Dashboards show generic identities and empty states until the backend provides real data.
+- Use Logout to switch roles during a presentation.

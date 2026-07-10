@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { LogOut } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import type { DashboardNavItem } from '@/components/layout/MobileBottomNav';
@@ -67,7 +68,12 @@ export function Sidebar({ entityType, basePath, navItems, identity }: SidebarPro
           );
         })}
       </nav>
-      <div className="border-t border-white/10 px-6 py-4 text-xs font-semibold text-slate-700">v2.0 · Nigeria</div>
+      <div className="border-t border-white/10 px-3 py-4">
+        <Link href="/logout" className="flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold text-slate-400 transition hover:bg-[#202852] hover:text-white">
+          <LogOut className="h-4 w-4" />
+          Logout
+        </Link>
+      </div>
     </aside>
   );
 }

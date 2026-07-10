@@ -10,15 +10,8 @@ type NotificationBellProps = {
   items?: { title: string; body: string; href?: string }[];
 };
 
-export function NotificationBell({ basePath, count = 3, items = [] }: NotificationBellProps) {
+export function NotificationBell({ basePath, count = 0, items = [] }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
-  const visibleItems = items.length
-    ? items
-    : [
-        { title: 'New queue update', body: 'A patient ticket moved in the live queue.' },
-        { title: 'Appointment reminder', body: 'Your next scheduled activity starts soon.' },
-        { title: 'System notice', body: 'All dashboards are connected to SynaptiVerse.' },
-      ];
 
   return (
     <div className="relative">
@@ -44,20 +37,23 @@ export function NotificationBell({ basePath, count = 3, items = [] }: Notificati
             </Link>
           </div>
           <div className="mt-2 grid gap-1">
-            {visibleItems.slice(0, 5).map((item) => (
-              <Link
-                key={`${item.title}-${item.body}`}
-                href={item.href ?? `${basePath}/notifications`}
-                className="rounded-xl px-3 py-2 transition hover:bg-slate-50"
-              >
-                <p className="text-sm font-semibold text-slate-800">{item.title}</p>
-                <p className="mt-0.5 text-xs leading-5 text-slate-500">{item.body}</p>
-              </Link>
-            ))}
+            {items.length === 0 ? (
+              <p className="rounded-xl px-3 py-5 text-center text-xs leading-5 text-slate-500">You're all caught up</p>
+            ) : (
+              items.slice(0, 5).map((item) => (
+                <Link
+                  key={`${item.title}-${item.body}`}
+                  href={item.href ?? `${basePath}/notifications`}
+                  className="rounded-xl px-3 py-2 transition hover:bg-slate-50"
+                >
+                  <p className="text-sm font-semibold text-slate-800">{item.title}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-500">{item.body}</p>
+                </Link>
+              ))
+            )}
           </div>
         </div>
       ) : null}
     </div>
   );
 }
-

@@ -30,6 +30,8 @@ const footerRoutes: Record<string, string> = {
 };
 
 export function Footer() {
+  const year = new Date().getFullYear();
+
   return (
     <footer className="bg-[#0D1117] px-6 pb-8 pt-16 text-slate-500">
       <div className="mx-auto max-w-6xl">
@@ -39,8 +41,6 @@ export function Footer() {
             <p className="mt-2 max-w-xs text-sm leading-6">AI-powered healthcare triage for Nigeria.</p>
             <div className="mt-6 space-y-2 text-xs text-slate-600">
               <p>hello@synaptiverse.ng</p>
-              <p>+234 800 SYNAP TI</p>
-              <p>Uyo, Akwa Ibom State, Nigeria</p>
             </div>
           </div>
           {footerGroups.map((group) => (
@@ -57,11 +57,10 @@ export function Footer() {
           ))}
         </div>
         <div className="mt-12 flex flex-col gap-4 border-t border-slate-800 pt-8 text-xs text-slate-600 md:flex-row md:items-center md:justify-between">
-          <p>© 2026 SynaptiVerse Health Technologies Ltd. Registered in Nigeria.</p>
-          <p>Made with care in Akwa Ibom</p>
+          <p>© {year} SynaptiVerse Health Technologies Ltd.</p>
           <div className="flex gap-2">
-            <span className="rounded border border-slate-800 px-2 py-1">NDPA 2023</span>
-            <span className="rounded border border-slate-800 px-2 py-1">ISO 27001 In Progress</span>
+            <span className="rounded border border-slate-800 px-2 py-1">NDPA</span>
+            <span className="rounded border border-slate-800 px-2 py-1">Security Review</span>
           </div>
         </div>
       </div>

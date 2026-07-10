@@ -1,2 +1,0 @@
-"""Synaptiverse triage backend package."""
-

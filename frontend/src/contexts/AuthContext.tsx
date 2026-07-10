@@ -11,7 +11,6 @@ type AuthState = {
 };
 
 const AuthContext = createContext<AuthState | null>(null);
-const DEMO_PATIENT_STORAGE_KEY = 'synaptiverse_demo_patient';
 
 function FullScreenSkeleton() {
   return (
@@ -38,19 +37,6 @@ function AuthProvider({ endpoint, loginPath, children }: { endpoint: string; log
         setUser(data);
         setError(null);
       } catch (caught) {
-        if (endpoint === '/api/v1/auth/patient/me' && typeof window !== 'undefined') {
-          const demoPatient = window.localStorage.getItem(DEMO_PATIENT_STORAGE_KEY);
-          if (demoPatient) {
-            try {
-              setUser(JSON.parse(demoPatient));
-              setError(null);
-              return;
-            } catch {
-              window.localStorage.removeItem(DEMO_PATIENT_STORAGE_KEY);
-            }
-          }
-        }
-
         setUser(null);
         setError(caught instanceof Error ? caught.message : 'Authentication failed');
         if (typeof window !== 'undefined') window.location.href = loginPath;

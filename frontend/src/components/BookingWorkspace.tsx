@@ -1,18 +1,41 @@
 'use client';
 
 import { CalendarDays, CheckCircle2, Loader2, Send } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { createTicket } from '@/lib/api';
-import { demoSlots } from '@/lib/demo-data';
+import { useEffect, useMemo, useState } from 'react';
+import { createTicket, listOpenSlots } from '@/lib/api';
+import type { ProviderSlot } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 export function BookingWorkspace() {
-  const [selectedSlot, setSelectedSlot] = useState(demoSlots[0]?.starts_at ?? null);
+  const [slots, setSlots] = useState<ProviderSlot[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [phone, setPhone] = useState('+234');
   const [complaint, setComplaint] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'done'>('idle');
+  const [isLoading, setIsLoading] = useState(true);
 
-  const slotsByDay = useMemo(() => demoSlots.slice(0, 12), []);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSlots() {
+      try {
+        const data = await listOpenSlots();
+        if (cancelled) return;
+        setSlots(data);
+        setSelectedSlot(data[0]?.starts_at ?? null);
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) setSlots([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    void loadSlots();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const slotsByDay = useMemo(() => slots.slice(0, 12), [slots]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -23,10 +46,11 @@ export function BookingWorkspace() {
         raw_intake_text: complaint,
         appointment_slot: selectedSlot,
       });
-    } catch {
-      // The offline demo still confirms locally so patient-facing forms remain usable on a LAN outage.
+      setStatus('done');
+    } catch (error) {
+      console.error(error);
+      setStatus('idle');
     }
-    setStatus('done');
   }
 
   return (
@@ -53,7 +77,7 @@ export function BookingWorkspace() {
           value={complaint}
           onChange={(event) => setComplaint(event.target.value)}
           className="min-h-32 rounded-lg border border-slate-300 px-4 py-2.5 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
-          placeholder="Example: Hot body and headache since yesterday"
+          placeholder="Describe the main concern"
           required
         />
       </label>
@@ -62,30 +86,37 @@ export function BookingWorkspace() {
           <CalendarDays className="h-5 w-5 text-blue-600" />
           <p className="text-sm font-medium uppercase tracking-wider text-slate-500">Open Time Slots</p>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {slotsByDay.map((slot) => (
-            <button
-              type="button"
-              key={slot.id}
-              onClick={() => setSelectedSlot(slot.starts_at)}
-              className={cn(
-                'front-desk-target border text-left',
-                selectedSlot === slot.starts_at
-                  ? 'border-blue-600 bg-blue-50 text-blue-700'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
-              )}
-            >
-              <span className="block text-sm font-bold">
-                {new Intl.DateTimeFormat('en-NG', { hour: 'numeric', minute: '2-digit' }).format(new Date(slot.starts_at))}
-              </span>
-              <span className="block text-sm font-normal text-slate-600">{slot.room_label}</span>
-            </button>
-          ))}
-        </div>
+        {isLoading ? (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-20 animate-pulse rounded-lg bg-slate-100" />)}</div>
+        ) : slotsByDay.length === 0 ? (
+          <p className="mt-4 rounded-lg border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">No open slots available</p>
+        ) : (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {slotsByDay.map((slot) => (
+              <button
+                type="button"
+                key={slot.id}
+                onClick={() => setSelectedSlot(slot.starts_at)}
+                className={cn(
+                  'front-desk-target border text-left',
+                  selectedSlot === slot.starts_at
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                )}
+              >
+                <span className="block text-sm font-bold">
+                  {new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(slot.starts_at))}
+                </span>
+                <span className="block text-sm font-normal text-slate-600">{slot.room_label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
       <button
         type="submit"
-        className="front-desk-target inline-flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700"
+        disabled={!selectedSlot || status === 'saving'}
+        className="front-desk-target inline-flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-300"
       >
         {status === 'saving' ? <Loader2 className="h-5 w-5 animate-spin" /> : status === 'done' ? <CheckCircle2 className="h-5 w-5" /> : <Send className="h-5 w-5" />}
         {status === 'done' ? 'Booking sent' : 'Submit clinic ticket'}
@@ -93,4 +124,3 @@ export function BookingWorkspace() {
     </form>
   );
 }
-

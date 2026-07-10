@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Activity, CalendarDays, Settings, Tv, UserPlus } from 'lucide-react';
+import { Activity, CalendarDays, LogOut, Settings, Tv, UserPlus } from 'lucide-react';
 
 const nav = [
   { href: '/hospital/queue', label: 'Queue', icon: Activity },
@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 p-4 md:p-6">
           <Link href="/hospital/dashboard" className="text-2xl font-bold tracking-tight text-slate-900">
-            SynaptiVerse Hospital
+            Hospital workspace
           </Link>
           <nav className="flex flex-wrap items-center gap-2">
             {nav.map((item) => (

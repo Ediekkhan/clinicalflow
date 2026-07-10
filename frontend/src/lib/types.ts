@@ -49,7 +49,6 @@ export type WebSocketEvent =
       priority: 'LOW' | 'NORMAL' | 'HIGH';
     };
 
-export const demoTenantId = '00000000-0000-4000-8000-000000000001';
 
 export const urgencyMeta: Record<
   UrgencyLevel,
@@ -77,4 +76,5 @@ export const urgencyMeta: Record<
     border: 'border-blue-200',
   },
 };
+
 

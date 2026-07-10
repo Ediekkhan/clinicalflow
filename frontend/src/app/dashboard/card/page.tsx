@@ -13,17 +13,9 @@ export default function PatientCardPage() {
         <section className="rounded-2xl border border-slate-100 bg-white p-5 text-center shadow-sm">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Digital Health Identity</p>
           <h2 className="font-display mt-1 text-3xl text-slate-900">Your SynaptiVerse card</h2>
-          <p className="mx-auto mt-1 max-w-2xl text-sm text-slate-500">Use this card at partner facilities across Nigeria to pull up your profile and visit history securely.</p>
+          <p className="mx-auto mt-1 max-w-2xl text-sm text-slate-500">Use this card at partner facilities to pull up your profile and visit history securely.</p>
         </section>
         <HealthCard />
-        <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-          <h3 className="font-semibold text-slate-900">Card details</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            {['Blood Group: O+', 'Genotype: AA', 'Known Allergies: None', 'Emergency Contact: +234 803 *** 8734', 'HMO: Amani Health'].map((item) => (
-              <div key={item} className="rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-600">{item}</div>
-            ))}
-          </div>
-        </section>
       </div>
     </DashboardShell>
   );

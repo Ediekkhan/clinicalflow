@@ -1,2 +1,0 @@
-"""External channel response templates."""
-

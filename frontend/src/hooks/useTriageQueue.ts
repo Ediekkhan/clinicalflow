@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { escalateTicket, listTickets, updateTicket } from '@/lib/api';
-import { demoTickets } from '@/lib/demo-data';
-import { demoTenantId, type NetworkMode, type QueueStatus, type Ticket, type WebSocketEvent } from '@/lib/types';
+import { type NetworkMode, type QueueStatus, type Ticket, type WebSocketEvent } from '@/lib/types';
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE ?? 'ws://localhost:8000';
 const pendingKey = 'synaptiverse.pending-queue-actions';
@@ -36,7 +35,7 @@ function savePending(actions: PendingAction[]) {
 }
 
 export function useTriageQueue() {
-  const [tickets, setTickets] = useState<Ticket[]>(demoTickets);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
   const [networkMode, setNetworkMode] = useState<NetworkMode>('reconnecting');
   const [pendingActions, setPendingActions] = useState<PendingAction[]>([]);
   const socketRef = useRef<WebSocket | null>(null);
@@ -101,8 +100,11 @@ export function useTriageQueue() {
   useEffect(() => {
     setPendingActions(loadPending());
     listTickets()
-      .then((loaded) => setTickets(loaded.length ? loaded : demoTickets))
-      .catch(() => setNetworkMode('offline'));
+      .then((loaded) => setTickets(loaded))
+      .catch(() => {
+        setTickets([]);
+        setNetworkMode('offline');
+      });
   }, []);
 
   useEffect(() => {
@@ -111,7 +113,9 @@ export function useTriageQueue() {
     let closedByCleanup = false;
 
     function connect() {
-      const socket = new WebSocket(`${WS_BASE}/api/v1/ws/triage?tenant_id=${demoTenantId}`);
+      const tenantId = process.env.NEXT_PUBLIC_TENANT_ID;
+      const query = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : '';
+      const socket = new WebSocket(`${WS_BASE}/api/v1/ws/triage${query}`);
       socketRef.current = socket;
 
       socket.onopen = () => {

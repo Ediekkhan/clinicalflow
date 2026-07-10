@@ -19,7 +19,7 @@ export default function WhatsAppCanvasPage() {
             <MessageCircle className="h-6 w-6 text-blue-600" />
             <div>
               <h2 className="text-sm font-bold text-slate-900">Existing visit found</h2>
-              <p className="text-sm text-slate-600">This phone already has an active clinic visit: SV-2026-9402.</p>
+              <p className="text-sm text-slate-600">This phone already has an active clinic visit.</p>
             </div>
           </div>
           <div className="mt-4 grid gap-3">
@@ -46,4 +46,5 @@ export default function WhatsAppCanvasPage() {
     </main>
   );
 }
+
 

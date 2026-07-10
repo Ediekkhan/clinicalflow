@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { Activity, Bell, CalendarDays, ClipboardList, LayoutDashboard, Menu, Settings, Tv, X } from 'lucide-react';
-import { useState } from 'react';
+import { Activity, Bell, CalendarDays, ClipboardList, LayoutDashboard, LogOut, Menu, Settings, Tv, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { NotificationBell } from '@/components/NotificationBell';
-import { demoSpecialist } from '@/lib/syn-data';
+import { api } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 const nav = [
@@ -17,8 +17,39 @@ const nav = [
   { href: '/hospital/waiting-room', label: 'Waiting Room', icon: Tv },
 ];
 
+type FacilityProfile = { name?: string; location?: string };
+type SpecialistProfile = { full_name?: string; specialty?: string };
+
 export function HospitalShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [facility, setFacility] = useState<FacilityProfile | null>(null);
+  const [specialist, setSpecialist] = useState<SpecialistProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProfiles() {
+      try {
+        const [facilityData, specialistData] = await Promise.allSettled([
+          api.get('/api/v1/hospital/me'),
+          api.get('/api/v1/auth/specialist/me'),
+        ]);
+        if (cancelled) return;
+        setFacility(facilityData.status === 'fulfilled' ? (facilityData.value as FacilityProfile) : null);
+        setSpecialist(specialistData.status === 'fulfilled' ? (specialistData.value as SpecialistProfile) : null);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    void loadProfiles();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const subtitle = [facility?.location, specialist?.full_name, specialist?.specialty].filter(Boolean).join(' · ');
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] pt-12">
@@ -27,11 +58,9 @@ export function HospitalShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <Link href="/hospital/dashboard" className="font-display block truncate text-3xl text-blue-300">
-                SynaptiVerse Hospital
+                {facility?.name ?? 'Hospital workspace'}
               </Link>
-              <p className="mt-1 max-w-[70vw] truncate text-sm text-slate-300 md:max-w-none">
-                Uyo Family Clinic · {demoSpecialist.full_name} ({demoSpecialist.specialty})
-              </p>
+              {isLoading ? <div className="mt-2 h-4 w-56 animate-pulse rounded bg-white/10" /> : subtitle ? <p className="mt-1 max-w-[70vw] truncate text-sm text-slate-300 md:max-w-none">{subtitle}</p> : null}
             </div>
             <nav className="hidden items-center gap-2 xl:flex">
               {nav.map((item) => (
@@ -46,6 +75,10 @@ export function HospitalShell({ children }: { children: React.ReactNode }) {
               ))}
             </nav>
             <div className="flex items-center gap-2">
+              <Link href="/logout" className="hidden min-h-12 items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-slate-200 hover:bg-white/10 sm:inline-flex">
+                <LogOut className="h-4 w-4" />
+                Logout
+              </Link>
               <div className="hidden sm:block">
                 <NotificationBell />
               </div>
@@ -68,6 +101,10 @@ export function HospitalShell({ children }: { children: React.ReactNode }) {
           >
             <div className="min-h-0">
               <div className="mt-4 grid gap-2 border-t border-white/10 pt-4 sm:grid-cols-2">
+                <Link href="/logout" onClick={() => setMenuOpen(false)} className="inline-flex min-h-12 items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-bold text-slate-200 hover:bg-white/10 sm:hidden">
+                  <LogOut className="h-4 w-4" />
+                  Logout
+                </Link>
                 {nav.map((item) => (
                   <Link
                     key={item.href}

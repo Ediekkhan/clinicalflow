@@ -11,7 +11,7 @@ const templates = [
   },
   {
     title: 'Shift alert',
-    body: '[PROJECT_NAME]: Your appointment {{ticket_number}} shifted to {{date}} {{time}}. Please arrive 10 mins early.',
+    body: '[PROJECT_NAME]: Your appointment {{ticket_number}} shifted to {{date}} {{time}}. Please arrive early.',
   },
   {
     title: 'Cancellation',
@@ -43,4 +43,5 @@ export default function SmsCanvasPage() {
     </main>
   );
 }
+
 

@@ -1,15 +1,47 @@
 'use client';
 
-import Link from 'next/link';
 import { Bell, X } from 'lucide-react';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { UrgencyBadge } from '@/components/UrgencyBadge';
 import { useNotifications } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
+import type { SynNotification } from '@/types';
+
+function routeForNotification(notification: SynNotification) {
+  const type = (notification as SynNotification & { type?: string }).type;
+  switch (type) {
+    case 'NEW_TICKET':
+    case 'QUEUE_UPDATE':
+    case 'BEING_SEEN':
+      return '/specialist/patients';
+    case 'APPOINTMENT_CONFIRMED':
+    case 'APPOINTMENT_CANCELLED':
+    case 'APPOINTMENT_REMINDER':
+      return '/specialist/schedule';
+    case 'TRIAGE_RESULT':
+      return '/specialist/patients';
+    case 'PRESCRIPTION_READY':
+    case 'LAB_RESULT':
+      return '/specialist/patients';
+    default:
+      return null;
+  }
+}
 
 export function NotificationBell() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { notifications, unreadCount, markAllRead } = useNotifications();
+  const { notifications, unreadCount, markAllRead, markRead } = useNotifications();
+
+  async function handleClick(notification: SynNotification) {
+    await markRead(notification.id);
+    const route = routeForNotification(notification);
+    if (route) {
+      setOpen(false);
+      router.push(route);
+    }
+  }
 
   return (
     <>
@@ -37,20 +69,21 @@ export function NotificationBell() {
             <button onClick={markAllRead} className="touch-target w-full bg-[#2563EB] text-white hover:bg-blue-700">Mark All Read</button>
           </div>
           <div className="grid gap-3 overflow-y-auto p-4 pt-0">
-            {notifications.filter((item) => !item.is_read).map((item) => (
-              <article key={item.id} className="rounded-card border border-[#E5E7EB] bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-bold text-[#111827]">{item.title}</p>
-                    <p className="mt-1 text-sm text-[#6B7280]">{item.body}</p>
+            {notifications.filter((item) => !item.is_read).length === 0 ? (
+              <div className="rounded-card border border-dashed border-[#E5E7EB] bg-white p-8 text-center text-sm text-[#6B7280]">You're all caught up</div>
+            ) : (
+              notifications.filter((item) => !item.is_read).map((item) => (
+                <button key={item.id} type="button" onClick={() => void handleClick(item)} className="rounded-card border border-[#E5E7EB] bg-white p-4 text-left shadow-sm transition hover:border-[#2563EB]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-[#111827]">{item.title}</p>
+                      <p className="mt-1 text-sm text-[#6B7280]">{item.body}</p>
+                    </div>
+                    {item.urgency_level ? <UrgencyBadge level={item.urgency_level} /> : null}
                   </div>
-                  {item.urgency_level ? <UrgencyBadge level={item.urgency_level} /> : null}
-                </div>
-                <Link href="/hospital/doctor/patients" className="mt-4 inline-flex min-h-12 items-center text-sm font-bold text-[#2563EB]">
-                  View Patient →
-                </Link>
-              </article>
-            ))}
+                </button>
+              ))
+            )}
           </div>
         </aside>
       </div>

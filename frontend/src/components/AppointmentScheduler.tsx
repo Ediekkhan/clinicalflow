@@ -1,26 +1,42 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Ban, CalendarClock, GripVertical, Lock, Send } from 'lucide-react';
-import { demoSlots } from '@/lib/demo-data';
 import type { ProviderSlot } from '@/lib/types';
-import { lockSlot } from '@/lib/api';
+import { listOpenSlots, lockSlot } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
-const providerOrder = ['Dr. Ekanem', 'Dr. Balogun', 'Dr. Udo'];
-
 export function AppointmentScheduler() {
-  const [slots, setSlots] = useState<ProviderSlot[]>(demoSlots);
+  const [slots, setSlots] = useState<ProviderSlot[]>([]);
   const [draggedSlot, setDraggedSlot] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const grouped = useMemo(
-    () =>
-      providerOrder.map((provider) => ({
-        provider,
-        slots: slots.filter((slot) => slot.provider_name === provider),
-      })),
-    [slots],
-  );
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSlots() {
+      try {
+        const data = await listOpenSlots();
+        if (!cancelled) setSlots(data);
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) setSlots([]);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    void loadSlots();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const grouped = useMemo(() => {
+    const providers = Array.from(new Set(slots.map((slot) => slot.provider_name).filter(Boolean)));
+    return providers.map((provider) => ({
+      provider,
+      slots: slots.filter((slot) => slot.provider_name === provider),
+    }));
+  }, [slots]);
 
   async function toggleLock(slot: ProviderSlot) {
     setSlots((current) =>
@@ -29,15 +45,15 @@ export function AppointmentScheduler() {
           ? {
               ...item,
               is_locked: !item.is_locked,
-              lock_reason: slot.is_locked ? null : 'Emergency period blocked by desk',
+              lock_reason: slot.is_locked ? null : 'Unavailable',
             }
           : item,
       ),
     );
     try {
-      await lockSlot(slot.id, !slot.is_locked, slot.is_locked ? undefined : 'Emergency period blocked by desk');
-    } catch {
-      // Leave the local state visible; the queue network toast handles sync state elsewhere.
+      await lockSlot(slot.id, !slot.is_locked, slot.is_locked ? undefined : 'Unavailable');
+    } catch (error) {
+      console.error(error);
     }
   }
 
@@ -68,55 +84,60 @@ export function AppointmentScheduler() {
           Send patient updates
         </button>
       </div>
-      <div className="grid gap-3 lg:grid-cols-3">
-        {grouped.map((providerGroup) => (
-          <section key={providerGroup.provider} className="rounded-lg border border-slate-200 bg-white p-3">
-            <div className="mb-3 px-1">
-              <p className="text-sm font-medium uppercase tracking-wider text-slate-500">{providerGroup.provider}</p>
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">{providerGroup.slots[0]?.specialty}</h2>
-            </div>
-            <div className="grid gap-2">
-              {providerGroup.slots.map((slot) => (
-                <article
-                  key={slot.id}
-                  draggable={!slot.is_locked}
-                  onDragStart={() => setDraggedSlot(slot.id)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => moveDragged(slot.id)}
-                  className={cn(
-                    'data-row flex min-h-20 items-center justify-between gap-3 rounded-lg border',
-                    slot.is_locked ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-slate-50 text-slate-900',
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    {slot.is_locked ? <Ban className="h-5 w-5" /> : <GripVertical className="h-5 w-5 text-slate-400" />}
-                    <span>
-                      <span className="block font-mono font-bold">
-                        {new Intl.DateTimeFormat('en-NG', { hour: 'numeric', minute: '2-digit' }).format(new Date(slot.starts_at))}
-                      </span>
-                      <span className="block text-sm">{slot.room_label}</span>
-                      {slot.lock_reason ? <span className="block text-sm font-medium">{slot.lock_reason}</span> : null}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => toggleLock(slot)}
-                    className="rounded-lg bg-white p-3 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
-                    aria-label={slot.is_locked ? 'Unlock slot' : 'Lock slot'}
+      {isLoading ? (
+        <div className="grid gap-3 lg:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-72 animate-pulse rounded-lg bg-slate-100" />)}</div>
+      ) : grouped.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">No open slots available</div>
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-3">
+          {grouped.map((providerGroup) => (
+            <section key={providerGroup.provider} className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="mb-3 px-1">
+                <p className="text-sm font-medium uppercase tracking-wider text-slate-500">{providerGroup.provider}</p>
+                <h2 className="text-2xl font-bold tracking-tight text-slate-900">{providerGroup.slots[0]?.specialty}</h2>
+              </div>
+              <div className="grid gap-2">
+                {providerGroup.slots.map((slot) => (
+                  <article
+                    key={slot.id}
+                    draggable={!slot.is_locked}
+                    onDragStart={() => setDraggedSlot(slot.id)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => moveDragged(slot.id)}
+                    className={cn(
+                      'data-row flex min-h-20 items-center justify-between gap-3 rounded-lg border',
+                      slot.is_locked ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-slate-50 text-slate-900',
+                    )}
                   >
-                    <Lock className="h-4 w-4" />
-                  </button>
-                </article>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
+                    <div className="flex items-center gap-3">
+                      {slot.is_locked ? <Ban className="h-5 w-5" /> : <GripVertical className="h-5 w-5 text-slate-400" />}
+                      <span>
+                        <span className="block font-mono font-bold">
+                          {new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(new Date(slot.starts_at))}
+                        </span>
+                        <span className="block text-sm">{slot.room_label}</span>
+                        {slot.lock_reason ? <span className="block text-sm font-medium">{slot.lock_reason}</span> : null}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleLock(slot)}
+                      className="rounded-lg bg-white p-3 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+                      aria-label={slot.is_locked ? 'Unlock slot' : 'Lock slot'}
+                    >
+                      <Lock className="h-4 w-4" />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
         <CalendarClock className="mr-2 inline h-5 w-5" />
-        Dragging a slot locally simulates staff overrides. Locking a slot calls the shared appointment API and broadcasts calendar changes to dashboards.
+        Locking a slot calls the shared appointment API and broadcasts calendar changes to dashboards.
       </div>
     </section>
   );
 }
-

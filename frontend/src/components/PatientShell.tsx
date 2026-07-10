@@ -1,9 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { Bell, CalendarDays, Home, Menu, MessageCircle, Ticket, UserRound, X } from 'lucide-react';
-import { useState } from 'react';
-import { demoPatient } from '@/lib/syn-data';
+import { Bell, CalendarDays, Home, LogOut, Menu, MessageCircle, Ticket, UserRound, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
 const nav = [
@@ -14,8 +14,31 @@ const nav = [
   { href: '/my-card', label: 'My Card', icon: UserRound },
 ];
 
+type PatientProfile = { card_number?: string };
+
 export function PatientShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profile, setProfile] = useState<PatientProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProfile() {
+      try {
+        const data = await api.get('/api/v1/auth/patient/me');
+        if (!cancelled) setProfile((data ?? null) as PatientProfile | null);
+      } catch (error) {
+        console.error(error);
+        if (!cancelled) setProfile(null);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    void loadProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#F7F8FA] pt-12">
@@ -26,9 +49,13 @@ export function PatientShell({ children }: { children: React.ReactNode }) {
               <Link href="/dashboard" className="font-display block truncate text-3xl text-[#2563EB]">
                 SynaptiVerse
               </Link>
-              <span className="mt-1 inline-flex max-w-full rounded-badge bg-[#e0f2fe] px-3 py-1 font-mono text-xs font-bold text-[#2563EB]">
-                <span className="truncate">{demoPatient.card_number}</span>
-              </span>
+              {isLoading ? (
+                <span className="mt-2 block h-6 w-36 animate-pulse rounded bg-slate-100" />
+              ) : profile?.card_number ? (
+                <span className="mt-1 inline-flex max-w-full rounded-badge bg-[#e0f2fe] px-3 py-1 font-mono text-xs font-bold text-[#2563EB]">
+                  <span className="truncate">{profile.card_number}</span>
+                </span>
+              ) : null}
             </div>
             <nav className="hidden items-center gap-2 lg:flex">
               {nav.map((item) => (
