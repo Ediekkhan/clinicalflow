@@ -41,15 +41,15 @@ export function PatientCard({ patient, reveal = false }: { patient: Patient; rev
         onPointerMove={onMove}
         onPointerLeave={() => setTilt({ x: 0, y: 0 })}
         className={cn(
-          'relative overflow-hidden rounded-card border border-blue-500/30 bg-[#0D1117] p-6 text-white shadow-md transition duration-500',
+          'relative overflow-hidden rounded-card border border-blue-500/30 bg-[#073d33] p-6 text-white shadow-md transition duration-500',
           reveal && 'animate-overtake-pulse',
         )}
         style={{ transform: `perspective(900px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)` }}
       >
-        <div className="absolute inset-x-0 top-0 h-1 bg-[#2563EB]" />
+        <div className="absolute inset-x-0 top-0 h-1 bg-[#0b5d4b]" />
         <div className="flex items-start justify-between gap-6">
           <div>
-            <p className="font-display text-2xl">SynaptiVerse</p>
+            <p className="font-display text-2xl">ClinicalFlow</p>
             <p className="mt-1 text-sm font-bold uppercase tracking-wider text-blue-300">◈ Health Identity Card</p>
           </div>
           <div className="h-12 w-12 rounded-full border border-blue-400/50 bg-blue-500/10" />
@@ -70,12 +70,12 @@ export function PatientCard({ patient, reveal = false }: { patient: Patient; rev
         <button
           type="button"
           onClick={saveCard}
-          className="touch-target inline-flex items-center justify-center gap-2 bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
+          className="touch-target inline-flex items-center justify-center gap-2 bg-[#0b5d4b] text-white hover:bg-[#073d33]"
         >
           <Download className="h-4 w-4" />
           {saving ? 'Preparing card...' : 'Save to Photos'}
         </button>
-        <Link href="/dashboard" className="touch-target inline-flex items-center justify-center gap-2 border border-[#E5E7EB] bg-white text-[#111827] hover:bg-[#e0f2fe]">
+        <Link href="/dashboard" className="touch-target inline-flex items-center justify-center gap-2 border border-[#dbe2dc] bg-white text-[#10231e] hover:bg-[#e9f6f1]">
           <LayoutDashboard className="h-4 w-4" />
           Go to Dashboard
         </Link>

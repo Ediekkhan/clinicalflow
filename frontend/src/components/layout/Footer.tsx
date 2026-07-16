@@ -33,14 +33,14 @@ export function Footer() {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="bg-[#0D1117] px-6 pb-8 pt-16 text-slate-500">
+    <footer className="bg-[#073d33] px-6 pb-8 pt-16 text-white/50">
       <div className="mx-auto max-w-6xl">
         <div className="grid gap-10 md:grid-cols-5">
           <div className="md:col-span-2">
-            <Link href="/" className="font-display text-2xl text-white">SynaptiVerse</Link>
-            <p className="mt-2 max-w-xs text-sm leading-6">AI-powered healthcare triage for Nigeria.</p>
+            <Link href="/" className="font-display text-2xl text-white">ClinicalFlow</Link>
+            <p className="mt-3 max-w-xs text-sm leading-6">Care intelligence that moves patients from symptoms to the right next step.</p>
             <div className="mt-6 space-y-2 text-xs text-slate-600">
-              <p>hello@synaptiverse.ng</p>
+              <p>hello@clinicalflow.ng</p>
             </div>
           </div>
           {footerGroups.map((group) => (
@@ -56,8 +56,8 @@ export function Footer() {
             </div>
           ))}
         </div>
-        <div className="mt-12 flex flex-col gap-4 border-t border-slate-800 pt-8 text-xs text-slate-600 md:flex-row md:items-center md:justify-between">
-          <p>© {year} SynaptiVerse Health Technologies Ltd.</p>
+        <div className="mt-12 flex flex-col gap-4 border-t border-white/10 pt-8 text-xs text-white/40 md:flex-row md:items-center md:justify-between">
+          <p>© {year} ClinicalFlow Health Technologies Ltd.</p>
           <div className="flex gap-2">
             <span className="rounded border border-slate-800 px-2 py-1">NDPA</span>
             <span className="rounded border border-slate-800 px-2 py-1">Security Review</span>

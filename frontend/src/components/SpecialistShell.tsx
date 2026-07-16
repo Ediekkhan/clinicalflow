@@ -42,13 +42,13 @@ export function SpecialistShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] pt-20">
+    <div className="min-h-screen bg-[#f4f5ef] pt-20">
       <Navbar />
 
-      <div className="bg-[#0D1117] text-white">
+      <div className="bg-[#073d33] text-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 p-4 md:p-6">
           <div>
-            <Link href="/specialist/dashboard" className="font-display text-3xl text-blue-300">SynaptiVerse</Link>
+            <Link href="/specialist/dashboard" className="font-display text-3xl text-blue-300">ClinicalFlow</Link>
             {isLoading ? <div className="mt-2 h-4 w-48 animate-pulse rounded bg-white/10" /> : <p className="text-sm text-slate-300">{[profile?.full_name, profile?.specialty].filter(Boolean).join(' · ')}</p>}
           </div>
           <PortalNav items={nav} />

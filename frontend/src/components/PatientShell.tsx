@@ -31,14 +31,14 @@ export function PatientShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] pt-20">
+    <div className="min-h-screen bg-[#f4f5ef] pt-20">
       <Navbar />
 
       <main className="mx-auto max-w-7xl p-4 md:p-6">
         {isLoading ? (
           <div className="mb-4 h-4 w-36 animate-pulse rounded bg-slate-100" />
         ) : profile?.card_number ? (
-          <div className="mb-4 inline-flex max-w-full rounded-badge bg-[#e0f2fe] px-3 py-1 font-mono text-xs font-bold text-[#2563EB]">
+          <div className="mb-4 inline-flex max-w-full rounded-badge bg-[#e9f6f1] px-3 py-1 font-mono text-xs font-bold text-[#0b5d4b]">
             <span className="truncate">{profile.card_number}</span>
           </div>
         ) : null}

@@ -1,6 +1,6 @@
 'use client';
 
-import { getDemoApiResponse } from '@/lib/demo-session';
+import { clearDemoSession, getDemoApiResponse } from '@/lib/demo-session';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
 
@@ -12,8 +12,11 @@ async function refreshSession() {
 }
 
 async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object, retry = true) {
-  const demoResponse = getDemoApiResponse(method, url, body);
-  if (demoResponse !== undefined) return demoResponse;
+  const isAuthenticationRequest = url.startsWith('/api/v1/auth/');
+  if (!isAuthenticationRequest) {
+    const demoResponse = getDemoApiResponse(method, url, body);
+    if (demoResponse !== undefined) return demoResponse;
+  }
 
   const response = await fetch(`${API_BASE}${url}`, {
     method,
@@ -47,6 +50,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
   }
   const payload = await response.json();
   if (url.includes('/auth/') && url.endsWith('/login') && typeof document !== 'undefined' && typeof payload?.role === 'string') {
+    clearDemoSession();
     const secure = window.location.protocol === 'https:' ? '; Secure' : '';
     document.cookie = `synaptiverse_role=${encodeURIComponent(payload.role)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
   }

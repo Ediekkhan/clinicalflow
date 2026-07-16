@@ -9,6 +9,17 @@ import { api } from '@/lib/auth';
 import type { Ticket } from '@/lib/types';
 
 type QueueStatus = { ticket_number?: string | null; queue_position?: number | null; queue_status?: string };
+type TicketCollection = { items?: Ticket[]; rows?: Ticket[] };
+
+function ticketItems(payload: unknown): Ticket[] {
+  if (Array.isArray(payload)) return payload as Ticket[];
+  if (payload && typeof payload === 'object') {
+    const collection = payload as TicketCollection;
+    if (Array.isArray(collection.items)) return collection.items;
+    if (Array.isArray(collection.rows)) return collection.rows;
+  }
+  return [];
+}
 
 function urgencyTone(level: Ticket['urgency_level']) {
   return level === 'CRITICAL' ? 'critical' : level === 'URGENT' ? 'urgent' : 'routine';
@@ -26,7 +37,7 @@ export default function MyVisitPage() {
         api.get('/api/v1/tickets'),
         api.get('/api/v1/patient/queue'),
       ]);
-      const loaded = (ticketData ?? []) as Ticket[];
+      const loaded = ticketItems(ticketData);
       setTickets(loaded);
       setQueue((queueData ?? null) as QueueStatus | null);
       setSelectedId((current) => loaded.some((ticket) => ticket.id === current) ? current : loaded[0]?.id ?? '');
@@ -81,7 +92,7 @@ export default function MyVisitPage() {
         ) : (
           <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
             <div className="bg-slate-950 px-6 py-7 text-center text-white">
-              <p className="text-xs font-bold uppercase tracking-[0.25em] text-blue-300">SynaptiVerse Clinic</p>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-blue-300">ClinicalFlow Clinic</p>
               <p className="mt-4 font-mono text-3xl font-black tracking-tight sm:text-5xl">{selected.ticket_number}</p>
             </div>
             <div className="grid gap-6 p-6 text-center sm:p-8">

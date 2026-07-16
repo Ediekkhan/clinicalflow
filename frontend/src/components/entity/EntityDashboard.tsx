@@ -143,8 +143,8 @@ function PageTitle({ title, subtitle, action }: { title: string; subtitle?: stri
   return (
     <header className="mb-9 flex flex-col justify-between gap-5 md:flex-row md:items-start">
       <div>
-        <h1 className="text-3xl font-black tracking-normal text-[#020b22] sm:text-4xl">{title}</h1>
-        {subtitle ? <p className="mt-3 max-w-3xl text-base leading-7 text-[#526783] sm:text-lg">{subtitle}</p> : null}
+        <h1 className="font-display text-4xl leading-tight tracking-[-0.02em] text-[#10231e] sm:text-5xl">{title}</h1>
+        {subtitle ? <p className="mt-3 max-w-3xl text-base leading-7 text-[#60706a] sm:text-lg">{subtitle}</p> : null}
       </div>
       {action}
     </header>
@@ -226,11 +226,11 @@ function RecordList({ items, view, isLoading, onNotificationClick }: { items: Ap
             </div>
         );
         return isNotification ? (
-          <button key={getString(item, ['id'], `${view}-${index}`)} type="button" onClick={() => onNotificationClick?.(item)} className="w-full rounded-2xl border border-slate-100 bg-white p-5 text-left shadow-sm transition hover:border-[#2563EB]/40 hover:shadow-md">
+          <button key={getString(item, ['id'], `${view}-${index}`)} type="button" onClick={() => onNotificationClick?.(item)} className="w-full rounded-[1.35rem] border border-[#dbe2dc] bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#0b5d4b]/40 hover:shadow-lg">
             {content}
           </button>
         ) : (
-          <article key={getString(item, ['id'], `${view}-${index}`)} className="w-full rounded-2xl border border-slate-100 bg-white p-5 text-left shadow-sm">{content}</article>
+          <article key={getString(item, ['id'], `${view}-${index}`)} className="w-full rounded-[1.35rem] border border-[#dbe2dc] bg-white p-5 text-left shadow-[0_12px_35px_rgba(7,61,51,.05)]">{content}</article>
         );
       })}
     </div>
@@ -280,13 +280,13 @@ function RecordEditor({ entity, view, items, onSaved }: { entity: EntityKey; vie
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="rounded-[1.5rem] border border-[#dbe2dc] bg-white p-5 shadow-[0_16px_45px_rgba(7,61,51,.06)]">
       <h2 className="text-lg font-bold text-slate-900">{editingId ? 'Edit record' : 'Add record'}</h2>
       <form onSubmit={submit} className="mt-4 grid gap-3 md:grid-cols-[1fr_1.5fr_0.7fr_auto]">
         <input required minLength={2} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Record title" className="rounded-xl border border-slate-200 px-4 py-3 text-sm" />
         <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" className="rounded-xl border border-slate-200 px-4 py-3 text-sm" />
         <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm"><option>ACTIVE</option><option>PENDING</option><option>COMPLETED</option><option>CANCELLED</option></select>
-        <button disabled={saving} className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white disabled:opacity-60">{saving ? 'Saving…' : editingId ? 'Update' : 'Create'}</button>
+        <button disabled={saving} className="sv-button-dark rounded-xl">{saving ? 'Saving…' : editingId ? 'Update' : 'Create'}</button>
       </form>
       {editingId ? <button type="button" onClick={() => { setEditingId(''); setTitle(''); setDescription(''); setStatus('ACTIVE'); }} className="mt-3 text-sm font-semibold text-slate-500">Cancel edit</button> : null}
       {feedback ? <p className="mt-3 text-sm text-slate-600" role="status">{feedback}</p> : null}

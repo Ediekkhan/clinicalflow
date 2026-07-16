@@ -16,7 +16,7 @@ const dmSerif = DM_Serif_Display({
 });
 
 export const metadata: Metadata = {
-  title: 'SynaptiVerse',
+  title: 'ClinicalFlow',
   description: 'Your AI Health Companion.',
 };
 

@@ -3,7 +3,7 @@ import SiteLayout from '@/components/layout/SiteLayout';
 const sections = [
   {
     title: 'Platform Use',
-    text: 'SynaptiVerse helps healthcare teams coordinate triage, queues, appointments, pharmacy fulfillment, laboratory workflows, and reporting.',
+    text: 'ClinicalFlow helps healthcare teams coordinate triage, queues, appointments, pharmacy fulfillment, laboratory workflows, and reporting.',
   },
   {
     title: 'Clinical Responsibility',
@@ -21,16 +21,16 @@ export default function TermsPage() {
     <main className="min-h-screen bg-[#f7f9fc] text-[#020b22]">
       <SiteLayout>
       <section className="mx-auto max-w-4xl px-6 pb-20 pt-32">
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-[#6157f5]">Legal</p>
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-[#0b5d4b]">Legal</p>
         <h1 className="mt-3 text-5xl font-black">Terms of Service</h1>
-        <p className="mt-4 max-w-2xl text-lg leading-8 text-[#526783]">
-          These terms outline the baseline rules for using SynaptiVerse across patients, providers, facilities, and partners.
+        <p className="mt-4 max-w-2xl text-lg leading-8 text-[#60706a]">
+          These terms outline the baseline rules for using ClinicalFlow across patients, providers, facilities, and partners.
         </p>
         <div className="mt-10 grid gap-5">
           {sections.map((section) => (
             <section key={section.title} id={section.id} className="rounded-2xl border border-[#dbe3ef] bg-white p-6">
               <h2 className="text-xl font-black">{section.title}</h2>
-              <p className="mt-3 leading-7 text-[#526783]">{section.text}</p>
+              <p className="mt-3 leading-7 text-[#60706a]">{section.text}</p>
             </section>
           ))}
         </div>

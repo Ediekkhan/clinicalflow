@@ -22,7 +22,7 @@ async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     const detail = payload.detail;
-    const message = typeof detail === 'string' ? detail : detail?.message ?? 'SynaptiVerse API request failed.';
+    const message = typeof detail === 'string' ? detail : detail?.message ?? 'ClinicalFlow API request failed.';
     throw new ApiError(response.status, message, detail);
   }
   return response.json();

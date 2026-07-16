@@ -638,6 +638,26 @@ async def public_platform_stats(session: AsyncSession = Depends(get_db)) -> dict
     return {"patients_routed": int(ticket_count or 0), "active_visits": int(active_count or 0), "channels_connected": 3, "clinic_regions": 2}
 
 
+@router.post("/public/triage-preview")
+async def public_triage_preview(request: Request) -> dict[str, Any]:
+    await enforce_rate_limit(request, "public-triage-preview", settings.public_intake_rate_limit)
+    payload = await request.json()
+    symptom_text = str(payload.get("symptom_description") or "").strip()
+    if len(symptom_text) < 3:
+        raise HTTPException(status_code=422, detail="Describe the symptoms in a little more detail")
+    clinical_route = await request.app.state.knowledge_graph.route(symptom_text)
+    urgency = clinical_route.derived_urgency
+    timing = "Seek emergency care now" if urgency == "CRITICAL" else "See a clinician today" if urgency == "URGENT" else "Book the next available visit"
+    return {
+        "condition_name": clinical_route.condition_id.replace("_", " ").title(),
+        "urgency": urgency,
+        "specialty": clinical_route.target_specialty,
+        "recommended_timing": timing,
+        "matched_symptoms": clinical_route.symptom_ids,
+        "disclaimer": "This preview is informational and does not replace assessment by a qualified clinician.",
+    }
+
+
 @router.get("/public/pricing")
 async def public_pricing() -> dict[str, Any]:
     return {"plans": [

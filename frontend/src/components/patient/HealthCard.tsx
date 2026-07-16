@@ -156,7 +156,7 @@ export function HealthCard() {
   async function shareCard() {
     if (navigator.share && cardNumber) {
       await navigator.share({
-        title: 'SynaptiVerse Health Card',
+        title: 'ClinicalFlow Health Card',
         text: [name, cardNumber].filter(Boolean).join(' - '),
       });
       return;
@@ -211,7 +211,7 @@ export function HealthCard() {
             ref={cardRef}
             onMouseMove={handleMove}
             onMouseLeave={resetTilt}
-            className="relative mx-auto aspect-[1.586] w-full max-w-[560px] overflow-hidden rounded-[1.35rem] border border-blue-400/40 bg-gradient-to-br from-[#111827] via-[#1D2464] to-[#2563EB] p-4 text-white shadow-[0_24px_70px_rgba(37,99,235,0.25)] transition-transform duration-200 sm:p-6"
+            className="relative mx-auto aspect-[1.586] w-full max-w-[560px] overflow-hidden rounded-[1.35rem] border border-blue-400/40 bg-gradient-to-br from-[#10231e] via-[#1D2464] to-[#0b5d4b] p-4 text-white shadow-[0_24px_70px_rgba(37,99,235,0.25)] transition-transform duration-200 sm:p-6"
           >
             <div className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-blue-300/15 sm:h-44 sm:w-44" />
             <div className="absolute -bottom-16 -left-12 h-40 w-40 rounded-full bg-white/10" />
@@ -221,7 +221,7 @@ export function HealthCard() {
             <div className="relative z-10 flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-blue-100 sm:text-xs">
-                  SynaptiVerse Health Card
+                  ClinicalFlow Health Card
                 </p>
                 <p className="mt-1 text-xs font-semibold text-blue-100/80">Nigeria</p>
               </div>
@@ -283,7 +283,7 @@ export function HealthCard() {
                   key={action.label}
                   type="button"
                   onClick={action.onClick}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-[#2563EB] hover:text-[#2563EB]"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-[#0b5d4b] hover:text-[#0b5d4b]"
                 >
                   <Icon className="h-4 w-4" />
                   {action.label}

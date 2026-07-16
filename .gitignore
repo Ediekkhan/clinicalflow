@@ -19,6 +19,7 @@ htmlcov/
 node_modules/
 .node_modules_broken_*/
 .next/
+.next-playwright/
 out/
 dist/
 build/

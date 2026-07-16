@@ -18,7 +18,7 @@ export function NotificationBell({ basePath, count = 0, items = [] }: Notificati
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-[#2563EB] hover:text-[#2563EB]"
+        className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-[#0b5d4b] hover:text-[#0b5d4b]"
         aria-label="Open notifications"
       >
         <Bell className="h-5 w-5" />
@@ -32,7 +32,7 @@ export function NotificationBell({ basePath, count = 0, items = [] }: Notificati
         <div className="absolute right-0 top-12 z-40 w-80 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl">
           <div className="flex items-center justify-between border-b border-slate-100 pb-2">
             <p className="text-sm font-semibold text-slate-900">Notifications</p>
-            <Link href={`${basePath}/notifications`} className="text-xs font-semibold text-[#2563EB]">
+            <Link href={`${basePath}/notifications`} className="text-xs font-semibold text-[#0b5d4b]">
               View All
             </Link>
           </div>

@@ -6,7 +6,7 @@ export default function HospitalsPage() {
   return (
     <main className="bg-slate-50">
       <SiteLayout>
-      <section className="bg-[#0D1117] px-6 pb-20 pt-32 text-white">
+      <section className="bg-[#073d33] px-6 pb-20 pt-32 text-white">
         <div className="mx-auto max-w-6xl">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">For Hospitals & Clinics</p>
           <h1 className="font-display mt-4 max-w-4xl text-5xl leading-tight md:text-7xl">Power your hospital&apos;s patient intake with AI</h1>
@@ -15,7 +15,7 @@ export default function HospitalsPage() {
               <span key={pill} className="rounded-full border border-blue-800 bg-blue-950 px-4 py-2">{pill}</span>
             ))}
           </div>
-          <Link href="/book-demo" className="mt-8 inline-flex rounded-xl bg-[#2563EB] px-6 py-3.5 font-semibold text-white">Book a Demo</Link>
+          <Link href="/book-demo" className="mt-8 inline-flex rounded-xl bg-[#0b5d4b] px-6 py-3.5 font-semibold text-white">Book a Demo</Link>
         </div>
       </section>
       <section className="px-6 py-20">
@@ -29,7 +29,7 @@ export default function HospitalsPage() {
             ['Analytics', 'Track wait times, condition mix, and utilization from API data.', BarChart2],
           ] as const).map(([title, body, Icon]) => (
             <article key={String(title)} className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-              <Icon className="h-7 w-7 text-[#2563EB]" />
+              <Icon className="h-7 w-7 text-[#0b5d4b]" />
               <h2 className="mt-4 font-semibold text-slate-900">{title}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-500">{body}</p>
             </article>

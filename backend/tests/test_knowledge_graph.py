@@ -45,3 +45,17 @@ def test_patient_triage_persists_the_graph_decision() -> None:
     persisted = next(ticket for ticket in tickets.json() if ticket["id"] == payload["ticket"]["id"])
     assert persisted["matched_condition_id"] == "emergency_red_flag"
     assert persisted["assigned_specialty"] == "Emergency Medicine"
+
+
+def test_public_triage_preview_routes_without_creating_a_ticket() -> None:
+    with TestClient(app) as client:
+        before = client.get("/api/v1/public/platform-stats").json()["patients_routed"]
+        response = client.post("/api/v1/public/triage-preview", json={"symptom_description": "Sudden chest pain and difficulty breathing"})
+        after = client.get("/api/v1/public/platform-stats").json()["patients_routed"]
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["urgency"] == "CRITICAL"
+    assert payload["specialty"] == "Emergency Medicine"
+    assert payload["recommended_timing"] == "Seek emergency care now"
+    assert after == before

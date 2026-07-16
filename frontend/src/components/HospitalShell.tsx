@@ -54,9 +54,9 @@ export function HospitalShell({ children }: { children: React.ReactNode }) {
   const subtitle = [facility?.location, specialist?.full_name, specialist?.specialty].filter(Boolean).join(' · ');
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] pt-20">
+    <div className="min-h-screen bg-[#f4f5ef] pt-20">
       <Navbar />
-      <div className="bg-[#0D1117] text-white">
+      <div className="bg-[#073d33] text-white">
         <div className="mx-auto max-w-7xl p-4 md:p-6">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">

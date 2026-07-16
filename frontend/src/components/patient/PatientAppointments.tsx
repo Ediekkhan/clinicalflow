@@ -126,7 +126,7 @@ export function PatientAppointments() {
           <article key={appointment.id} className={`rounded-2xl border border-slate-100 p-5 shadow-sm ${completed ? 'bg-slate-50 text-slate-600' : 'bg-white'}`}>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex gap-4">
-                <div className="grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-[#2563EB]">
+                <div className="grid h-12 w-12 place-items-center rounded-xl bg-blue-50 text-[#0b5d4b]">
                   <CalendarCheck className="h-6 w-6" />
                 </div>
                 <div>
@@ -150,7 +150,7 @@ export function PatientAppointments() {
             </div>
             {completed ? (
               <div className="mt-4 border-t border-slate-200 pt-4">
-                <button type="button" onClick={() => setSummaryId(summaryOpen ? null : appointment.id)} className="inline-flex items-center gap-2 text-sm font-semibold text-[#2563EB]">
+                <button type="button" onClick={() => setSummaryId(summaryOpen ? null : appointment.id)} className="inline-flex items-center gap-2 text-sm font-semibold text-[#0b5d4b]">
                   <FileText className="h-4 w-4" />
                   View Summary →
                 </button>

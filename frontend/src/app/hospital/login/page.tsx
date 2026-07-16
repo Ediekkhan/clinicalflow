@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/auth';
+import { AuthFrame } from '@/components/auth/AuthFrame';
 
 const roles = [
   { label: 'Doctor / Specialist', value: 'doctor', icon: Stethoscope },
@@ -44,15 +45,8 @@ export default function HospitalLoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#0D1117] p-4">
-      <form onSubmit={submit} className="grid w-full max-w-md gap-5 rounded-card border border-white/10 bg-white p-5 shadow-md md:p-6">
-        <div className="text-center">
-          <p className="font-display text-4xl text-[#2563EB]">SynaptiVerse</p>
-          <h1 className="mt-3 text-xl font-bold text-[#111827]">Hospital Account Login</h1>
-          <p className="mt-2 text-sm leading-6 text-[#6B7280]">
-            Doctors, nurses, and admins sign into the hospital account, then see only the queues and patients relevant to their role.
-          </p>
-        </div>
+    <AuthFrame eyebrow="Facility access" title="Enter your hospital workspace." description="Doctors, nurses, and administrators see only the patients, queues, and controls relevant to their role.">
+      <form onSubmit={submit} className="grid max-w-lg gap-5">
         <div className="grid gap-2">
           {roles.map((item) => (
             <button
@@ -62,8 +56,8 @@ export default function HospitalLoginPage() {
               className={cn(
                 'front-desk-target flex items-center justify-center gap-2 border',
                 role === item.value
-                  ? 'border-[#2563EB] bg-[#e0f2fe] text-[#2563EB]'
-                  : 'border-[#E5E7EB] bg-white text-[#6B7280]',
+                  ? 'border-[#0b5d4b] bg-[#e9f6f1] text-[#0b5d4b]'
+                  : 'border-[#dbe2dc] bg-white text-[#60706a]',
               )}
             >
               <item.icon className="h-5 w-5" />
@@ -71,23 +65,23 @@ export default function HospitalLoginPage() {
             </button>
           ))}
         </div>
-        <label className="grid gap-2 text-sm font-bold text-[#111827]">
+        <label className="grid gap-2 text-sm font-bold text-[#10231e]">
           Hospital code
           <input
             value={hospitalCode}
             onChange={(event) => setHospitalCode(event.target.value)}
-            className="min-h-12 rounded-lg border border-[#E5E7EB] px-4 py-2.5 outline-none focus:border-[#2563EB]"
+            className="min-h-14 rounded-2xl border border-[#dbe2dc] bg-[#f8f9f5] px-5 outline-none focus:border-[#0b5d4b]"
           />
           {errors.hospitalCode ? <span className="text-xs text-[#DC2626]">{errors.hospitalCode}</span> : null}
         </label>
-        <label className="grid gap-2 text-sm font-bold text-[#111827]">
+        <label className="grid gap-2 text-sm font-bold text-[#10231e]">
           Hospital password
           <input
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             placeholder="Password123!"
-            className="min-h-12 rounded-lg border border-[#E5E7EB] px-4 py-2.5 outline-none focus:border-[#2563EB]"
+            className="min-h-14 rounded-2xl border border-[#dbe2dc] bg-[#f8f9f5] px-5 outline-none focus:border-[#0b5d4b]"
           />
           {errors.password ? <span className="text-xs text-[#DC2626]">{errors.password}</span> : null}
         </label>
@@ -95,12 +89,12 @@ export default function HospitalLoginPage() {
         <button
           type="submit"
           disabled={!valid || loading}
-          className="front-desk-target inline-flex items-center justify-center gap-2 bg-[#2563EB] text-white hover:bg-blue-700"
+          className="sv-button-dark w-full"
         >
           <LogIn className="h-5 w-5" />
           {loading ? 'Signing in…' : 'Enter Hospital Workspace'}
         </button>
       </form>
-    </main>
+    </AuthFrame>
   );
 }
