@@ -38,8 +38,9 @@ export function DashboardShell({
 
   return (
     <div className="min-h-screen bg-[#f6f8fb]">
+      <a href="#main-content" className="fixed left-4 top-4 z-[100] -translate-y-24 rounded-lg bg-white px-4 py-3 font-semibold text-blue-700 shadow-lg transition focus:translate-y-0">Skip to main content</a>
       <Sidebar entityType={entityType} basePath={resolvedBase} navItems={navItems} identity={identity} />
-      <main className="min-h-screen pb-24 md:ml-[273px] md:pb-0">
+      <main id="main-content" tabIndex={-1} className="min-h-screen pb-24 md:ml-[273px] md:pb-0">
         <header className="flex items-center justify-between px-4 py-4 md:hidden">
           <Link href="/logout" className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm">
             <LogOut className="h-4 w-4" />

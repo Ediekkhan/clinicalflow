@@ -4,14 +4,14 @@ import Link from 'next/link';
 import { useEffect } from 'react';
 import { LogOut } from 'lucide-react';
 import { clearDemoSession } from '@/lib/demo-session';
+import { api } from '@/lib/auth';
 
 export default function LogoutPage() {
   useEffect(() => {
     clearDemoSession();
-    const timer = window.setTimeout(() => {
-      window.location.replace('/signup');
-    }, 900);
-    return () => window.clearTimeout(timer);
+    void api.post('/api/v1/auth/logout', {}).finally(() => {
+      window.setTimeout(() => window.location.replace('/login'), 500);
+    });
   }, []);
 
   return (
@@ -21,8 +21,8 @@ export default function LogoutPage() {
           <LogOut className="h-6 w-6" />
         </div>
         <h1 className="mt-4 text-2xl font-black">Signed out</h1>
-        <p className="mt-2 text-sm leading-6 text-slate-500">Your local demo session has been cleared.</p>
-        <Link href="/signup" className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#2563EB] px-4 py-3 text-sm font-bold text-white">
+        <p className="mt-2 text-sm leading-6 text-slate-500">Your session has been securely revoked.</p>
+        <Link href="/login" className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#2563EB] px-4 py-3 text-sm font-bold text-white">
           Choose another workspace
         </Link>
       </section>

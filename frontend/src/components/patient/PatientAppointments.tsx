@@ -25,6 +25,7 @@ type AppointmentEvent = {
   type?: string;
   appointment_id?: string;
   notes?: string;
+  payload?: Appointment;
 };
 
 function formatDateTime(value?: string) {
@@ -55,8 +56,26 @@ export function PatientAppointments() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [summaryId, setSummaryId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  useWebSocket<AppointmentEvent>('/api/v1/ws/patient/appointments', (event) => {
+  async function cancelAppointment(id: string) {
+    setBusyId(id);
+    try {
+      const updated = await api.patch(`/api/v1/appointments/${id}/cancel`, {});
+      setAppointments((current) => current.map((appointment) => appointment.id === id ? { ...appointment, ...(updated as Appointment) } : appointment));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  useWebSocket<AppointmentEvent>('/api/v1/ws/triage', (event) => {
+    if (event.type === 'appointment.updated' && event.payload?.id) {
+      setAppointments((current) => {
+        const remaining = current.filter((appointment) => appointment.id !== event.payload?.id);
+        return [event.payload as Appointment, ...remaining];
+      });
+      return;
+    }
     if (event.type !== 'APPOINTMENT_COMPLETED' || !event.appointment_id) return;
     setAppointments((current) =>
       current.map((appointment) =>
@@ -136,6 +155,12 @@ export function PatientAppointments() {
                   View Summary →
                 </button>
                 {summaryOpen ? <p className="mt-3 rounded-xl bg-white p-4 text-sm text-slate-600">{appointment.consultation_notes || 'No notes recorded'}</p> : null}
+              </div>
+            ) : appointment.status === 'BOOKED' ? (
+              <div className="mt-4 border-t border-slate-100 pt-4 text-right">
+                <button type="button" disabled={busyId === appointment.id} onClick={() => void cancelAppointment(appointment.id)} className="rounded-lg bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-600 hover:bg-rose-100 disabled:opacity-50">
+                  {busyId === appointment.id ? 'Cancelling…' : 'Cancel appointment'}
+                </button>
               </div>
             ) : null}
           </article>

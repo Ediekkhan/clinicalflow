@@ -8,12 +8,12 @@ type Mode = NetworkMode | NetworkState;
 
 const copy: Record<Mode, string> = {
   connected: '● Connected to live clinic stream',
-  reconnecting: '⚡ Syncing...',
-  offline: '⚠️ Offline — changes will sync on reconnect',
+  reconnecting: '⚡ Network intermittent. Syncing local queue changes...',
+  offline: '⚠️ Working offline. Actions will cache locally until connection returns.',
 };
 
 const classes: Record<Mode, string> = {
-  connected: 'bg-blue-600 text-white',
+  connected: 'bg-emerald-500 text-white',
   reconnecting: 'bg-amber-500 text-white animate-pulse',
   offline: 'bg-rose-600 text-white',
 };

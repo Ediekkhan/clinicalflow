@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { Clock, FileText, Target, User, Wallet, Building2, Stethoscope, CheckCircle2 } from 'lucide-react';
-import { Footer } from '@/components/layout/Footer';
-import { Navbar } from '@/components/layout/Navbar';
+import SiteLayout from '@/components/layout/SiteLayout';
 
 const offers = [
   ['AI-Matched Patients', 'Receive patients already triaged and matched to your specialty by our AI.', Target],
@@ -13,7 +12,7 @@ const offers = [
 export default function SpecialistsPage() {
   return (
     <main className="bg-slate-50">
-      <Navbar />
+      <SiteLayout>
       <section className="bg-[#0D1117] px-6 pb-20 pt-32 text-white">
         <div className="mx-auto grid max-w-6xl gap-10 md:grid-cols-[1fr_0.6fr] md:items-end">
           <div>
@@ -68,7 +67,7 @@ export default function SpecialistsPage() {
           </div>
         </div>
       </section>
-      <Footer />
+      </SiteLayout>
     </main>
   );
 }

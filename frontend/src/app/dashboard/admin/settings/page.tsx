@@ -1,5 +1,5 @@
-import { EntityDashboard } from '@/components/entity/EntityDashboard';
+import { AdminRetentionAction } from '@/components/AdminRetentionAction';
 
 export default function AdminSettingsPage() {
-  return <EntityDashboard entity="admin" view="settings" title="Settings" />;
+  return <AdminRetentionAction />;
 }

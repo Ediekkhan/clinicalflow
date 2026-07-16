@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { CheckCircle2 } from 'lucide-react';
-import { Footer } from '@/components/layout/Footer';
-import { Navbar } from '@/components/layout/Navbar';
+import SiteLayout from '@/components/layout/SiteLayout';
 
 const pricingTiers = [
   {
@@ -39,7 +38,7 @@ const pricingTiers = [
 export default function PricingPage() {
   return (
     <main className="bg-slate-50 text-[#0F172A]">
-      <Navbar />
+      <SiteLayout>
       <section className="px-6 pb-12 pt-32 text-center">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Pricing</p>
         <h1 className="font-display mx-auto mt-3 max-w-3xl text-5xl text-[#0F172A]">Pricing for every healthcare team</h1>
@@ -97,7 +96,7 @@ export default function PricingPage() {
           </div>
         </div>
       </section>
-      <Footer />
+      </SiteLayout>
     </main>
   );
 }

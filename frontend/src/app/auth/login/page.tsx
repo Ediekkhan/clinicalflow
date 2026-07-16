@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { ShieldCheck, Stethoscope } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/auth';
 
 const roles = [
   { label: 'Clinic Nurse', value: 'NURSE', icon: Stethoscope },
@@ -10,8 +12,11 @@ const roles = [
 ] as const;
 
 export default function LoginPage() {
+  const router = useRouter();
   const [role, setRole] = useState<(typeof roles)[number]['value']>('NURSE');
   const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const masked = useMemo(() => Array.from({ length: 4 }, (_, index) => (pin[index] ? '●' : '○')).join(' '), [pin]);
 
   function press(value: string) {
@@ -20,6 +25,21 @@ export default function LoginPage() {
       return;
     }
     setPin((current) => (current.length < 4 ? current + value : current));
+  }
+
+  async function login() {
+    if (pin.length !== 4 || loading) return;
+    setLoading(true);
+    setError('');
+    try {
+      await api.post('/api/v1/auth/staff/pin-login', { role: role.toLowerCase(), pin });
+      router.push(role === 'ADMIN' ? '/dashboard/admin' : '/nurse/queue');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Invalid role or PIN');
+      setPin('');
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -49,19 +69,21 @@ export default function LoginPage() {
         <div className="rounded-lg bg-slate-950 p-4 text-center font-mono text-2xl font-bold tracking-tight">
           {masked}
         </div>
+        {error ? <p className="rounded-lg bg-rose-950 px-4 py-3 text-sm font-semibold text-rose-200">{error}</p> : null}
         <div className="grid grid-cols-3 gap-3">
           {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'login'].map((key) => (
             <button
               key={key}
               type="button"
-              onClick={() => (key === 'login' ? undefined : press(key))}
+              onClick={() => (key === 'login' ? void login() : press(key))}
+              disabled={loading || (key === 'login' && pin.length !== 4)}
               className={cn(
                 'front-desk-target bg-slate-800 text-white hover:bg-slate-700',
                 key === 'login' && 'bg-blue-600 hover:bg-blue-700',
                 key === 'clear' && 'bg-slate-700',
               )}
             >
-              {key === 'login' ? 'Login' : key === 'clear' ? 'Clear' : key}
+              {key === 'login' ? (loading ? 'Wait…' : 'Login') : key === 'clear' ? 'Clear' : key}
             </button>
           ))}
         </div>
@@ -69,4 +91,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

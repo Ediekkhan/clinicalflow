@@ -19,6 +19,7 @@ export type Ticket = {
   raw_intake_text: string | null;
   extracted_symptoms: string | null;
   created_at: string;
+  version: number;
   pendingSync?: boolean;
   pulse?: boolean;
 };
@@ -33,6 +34,21 @@ export type ProviderSlot = {
   ends_at: string;
   is_locked: boolean;
   lock_reason: string | null;
+  is_booked: boolean;
+};
+
+export type Appointment = {
+  id: string;
+  tenant_id: string;
+  ticket_id: string;
+  slot_id: string;
+  customer_phone: string;
+  status: 'BOOKED' | 'CANCELLED' | 'COMPLETED';
+  provider_name: string;
+  specialty: string;
+  room_label: string;
+  starts_at: string;
+  ends_at: string;
 };
 
 export type WebSocketEvent =
@@ -76,5 +92,3 @@ export const urgencyMeta: Record<
     border: 'border-blue-200',
   },
 };
-
-

@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from 'react';
 import { Calculator, Send } from 'lucide-react';
+import { api } from '@/lib/auth';
 
 export function RoiCalculator() {
   const [dailyCapacity, setDailyCapacity] = useState(120);
   const [minutesSaved, setMinutesSaved] = useState(7);
+  const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'saving' | 'done' | 'error'>('idle');
 
   const roi = useMemo(() => {
     const dailyHours = (dailyCapacity * minutesSaved) / 60;
@@ -13,6 +16,22 @@ export function RoiCalculator() {
     const extraVisits = Math.round(monthlyHours * 4);
     return { dailyHours, monthlyHours, extraVisits };
   }, [dailyCapacity, minutesSaved]);
+
+  async function submit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setStatus('saving');
+    try {
+      await api.post('/api/v1/public/demo-requests', {
+        work_email: email,
+        source: 'ROI_CALCULATOR',
+        daily_capacity: dailyCapacity,
+        minutes_saved: minutesSaved,
+      });
+      setStatus('done');
+    } catch {
+      setStatus('error');
+    }
+  }
 
   return (
     <section className="grid gap-6 rounded-lg border border-slate-200 bg-white p-4 md:p-6">
@@ -63,18 +82,21 @@ export function RoiCalculator() {
           <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">{roi.extraVisits}</p>
         </div>
       </div>
-      <form className="grid gap-3 sm:grid-cols-[1fr_auto]">
+      <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <input
           className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
           placeholder="operations@clinic.ng"
           type="email"
+          required
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
         />
-        <button className="touch-target inline-flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700">
+        <button disabled={status === 'saving'} className="touch-target inline-flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-300">
           <Send className="h-4 w-4" />
-          Request demo
+          {status === 'saving' ? 'Sending…' : status === 'done' ? 'Request received' : 'Request demo'}
         </button>
+        {status === 'error' ? <p className="text-sm font-semibold text-rose-600 sm:col-span-2">Could not submit. Please try again.</p> : null}
       </form>
     </section>
   );
 }
-

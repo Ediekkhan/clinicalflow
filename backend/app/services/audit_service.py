@@ -25,6 +25,7 @@ class AuditAction(str, Enum):
     TICKET_ASSIGNED = "TICKET_ASSIGNED"
     APPOINTMENT_BOOKED = "APPOINTMENT_BOOKED"
     APPOINTMENT_CANCELLED = "APPOINTMENT_CANCELLED"
+    APPOINTMENT_RESCHEDULED = "APPOINTMENT_RESCHEDULED"
     APPOINTMENT_COMPLETED = "APPOINTMENT_COMPLETED"
     STAFF_CREATED = "STAFF_CREATED"
     STAFF_DEACTIVATED = "STAFF_DEACTIVATED"
@@ -62,6 +63,8 @@ async def write_audit_log(
     if actor_id and actor_uuid is None:
         log_metadata["actor_id_raw"] = actor_id
 
+    import json
+
     log = AuditLog(
         action=action.value,
         actor_id=actor_uuid,
@@ -70,8 +73,7 @@ async def write_audit_log(
         ip_address=ip_address,
         resource_type=resource_type,
         resource_id=_uuid_or_none(resource_id),
-        log_metadata=log_metadata or None,
+        log_metadata=json.dumps(log_metadata) if log_metadata else None,
         user_agent=user_agent,
     )
     db.add(log)
-

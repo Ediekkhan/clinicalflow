@@ -1,5 +1,4 @@
-import { Footer } from '@/components/layout/Footer';
-import { Navbar } from '@/components/layout/Navbar';
+import SiteLayout from '@/components/layout/SiteLayout';
 
 const sections = [
   {
@@ -22,7 +21,7 @@ const sections = [
 export default function PrivacyPage() {
   return (
     <main className="min-h-screen bg-[#f7f9fc] text-[#020b22]">
-      <Navbar />
+      <SiteLayout>
       <section className="mx-auto max-w-4xl px-6 pb-20 pt-32">
         <p className="text-xs font-black uppercase tracking-[0.18em] text-[#6157f5]">Legal</p>
         <h1 className="mt-3 text-5xl font-black">Privacy Policy</h1>
@@ -38,7 +37,7 @@ export default function PrivacyPage() {
           ))}
         </div>
       </section>
-      <Footer />
+      </SiteLayout>
     </main>
   );
 }

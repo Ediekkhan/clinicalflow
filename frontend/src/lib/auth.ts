@@ -17,7 +17,9 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
 
   const response = await fetch(`${API_BASE}${url}`, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    headers: {
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
     credentials: 'include',
     body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
@@ -37,8 +39,18 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
     throw new Error(payload.detail?.message ?? payload.detail ?? payload.message ?? 'Request failed');
   }
 
-  if (response.status === 204) return null;
-  return response.json();
+  if (response.status === 204) {
+    if (url === '/api/v1/auth/logout' && typeof document !== 'undefined') {
+      document.cookie = 'synaptiverse_role=; Max-Age=0; Path=/; SameSite=Lax';
+    }
+    return null;
+  }
+  const payload = await response.json();
+  if (url.includes('/auth/') && url.endsWith('/login') && typeof document !== 'undefined' && typeof payload?.role === 'string') {
+    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `synaptiverse_role=${encodeURIComponent(payload.role)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
+  }
+  return payload;
 }
 
 export const api = {

@@ -1,12 +1,11 @@
 import Link from 'next/link';
 import { BarChart2, Kanban, MessageSquare, Shield, Users, Workflow } from 'lucide-react';
-import { Footer } from '@/components/layout/Footer';
-import { Navbar } from '@/components/layout/Navbar';
+import SiteLayout from '@/components/layout/SiteLayout';
 
 export default function HospitalsPage() {
   return (
     <main className="bg-slate-50">
-      <Navbar />
+      <SiteLayout>
       <section className="bg-[#0D1117] px-6 pb-20 pt-32 text-white">
         <div className="mx-auto max-w-6xl">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">For Hospitals & Clinics</p>
@@ -37,7 +36,7 @@ export default function HospitalsPage() {
           ))}
         </div>
       </section>
-      <Footer />
+      </SiteLayout>
     </main>
   );
 }

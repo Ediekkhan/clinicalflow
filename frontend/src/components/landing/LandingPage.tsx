@@ -6,6 +6,7 @@ import { ArrowRight, Brain, CalendarCheck, CheckCircle2, Image as ImageIcon, Mai
 import { Footer } from '@/components/layout/Footer';
 import { Navbar } from '@/components/layout/Navbar';
 import { api } from '@/lib/auth';
+import { RoiCalculator } from '@/components/RoiCalculator';
 
 type PlatformStats = Record<string, number>;
 type PublicPlan = { id?: string; name?: string; price_label?: string; description?: string; cta_href?: string };
@@ -343,6 +344,15 @@ export function LandingPage() {
       <Navbar />
       <Hero />
       <Stats platformStats={platformStats} />
+      <section className="bg-slate-50 px-6 py-20" id="roi">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-8 text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Operational ROI</p>
+            <h2 className="font-display mt-2 text-4xl text-[#0F172A]">Build the case for your clinic</h2>
+          </div>
+          <RoiCalculator />
+        </div>
+      </section>
       <FeatureGrid />
       <SecurityProof />
       <HowItWorks />

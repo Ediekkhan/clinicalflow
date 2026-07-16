@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ArrowRight, FileText, Star } from 'lucide-react';
-import { Footer } from '@/components/layout/Footer';
-import { Navbar } from '@/components/layout/Navbar';
+import SiteLayout from '@/components/layout/SiteLayout';
 import { api } from '@/lib/auth';
 
 type BlogPost = { id?: string; title?: string; category?: string; excerpt?: string; published_at?: string };
@@ -144,8 +143,7 @@ export default function BlogPage() {
   }, []);
 
   return (
-    <main className="bg-slate-50 text-[#0F172A]">
-      <Navbar />
+    <SiteLayout>
       <section className="px-6 pb-16 pt-32 text-center">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Health Insights</p>
         <h1 className="font-display mt-3 text-5xl text-[#0F172A]">Latest health updates</h1>
@@ -175,7 +173,6 @@ export default function BlogPage() {
         </div>
       </section>
       <ReviewsSection />
-      <Footer />
-    </main>
+    </SiteLayout>
   );
 }

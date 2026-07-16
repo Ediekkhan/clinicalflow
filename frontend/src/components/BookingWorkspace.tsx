@@ -2,16 +2,17 @@
 
 import { CalendarDays, CheckCircle2, Loader2, Send } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { createTicket, listOpenSlots } from '@/lib/api';
-import type { ProviderSlot } from '@/lib/types';
+import { bookAppointment, createTicket, listOpenSlots } from '@/lib/api';
+import type { Appointment, ProviderSlot } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 export function BookingWorkspace() {
   const [slots, setSlots] = useState<ProviderSlot[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
   const [phone, setPhone] = useState('+234');
   const [complaint, setComplaint] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'done'>('idle');
+  const [confirmation, setConfirmation] = useState<Appointment | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -20,8 +21,9 @@ export function BookingWorkspace() {
       try {
         const data = await listOpenSlots();
         if (cancelled) return;
-        setSlots(data);
-        setSelectedSlot(data[0]?.starts_at ?? null);
+        const available = data.filter((slot) => !slot.is_locked && !slot.is_booked);
+        setSlots(available);
+        setSelectedSlotId(available[0]?.id ?? null);
       } catch (error) {
         console.error(error);
         if (!cancelled) setSlots([]);
@@ -41,11 +43,13 @@ export function BookingWorkspace() {
     event.preventDefault();
     setStatus('saving');
     try {
-      await createTicket({
+      const ticket = await createTicket({
         customer_phone: phone,
         raw_intake_text: complaint,
-        appointment_slot: selectedSlot,
       });
+      if (!selectedSlotId) throw new Error('Choose an appointment slot');
+      const appointment = await bookAppointment(ticket.id, selectedSlotId, phone);
+      setConfirmation(appointment);
       setStatus('done');
     } catch (error) {
       console.error(error);
@@ -96,10 +100,10 @@ export function BookingWorkspace() {
               <button
                 type="button"
                 key={slot.id}
-                onClick={() => setSelectedSlot(slot.starts_at)}
+                onClick={() => setSelectedSlotId(slot.id)}
                 className={cn(
                   'front-desk-target border text-left',
-                  selectedSlot === slot.starts_at
+                  selectedSlotId === slot.id
                     ? 'border-blue-600 bg-blue-50 text-blue-700'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
                 )}
@@ -115,12 +119,20 @@ export function BookingWorkspace() {
       </section>
       <button
         type="submit"
-        disabled={!selectedSlot || status === 'saving'}
+        disabled={!selectedSlotId || status === 'saving'}
         className="front-desk-target inline-flex items-center justify-center gap-2 bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-300"
       >
         {status === 'saving' ? <Loader2 className="h-5 w-5 animate-spin" /> : status === 'done' ? <CheckCircle2 className="h-5 w-5" /> : <Send className="h-5 w-5" />}
         {status === 'done' ? 'Booking sent' : 'Submit clinic ticket'}
       </button>
+      {confirmation ? (
+        <section role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
+          <p className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-5 w-5" /> Appointment confirmed</p>
+          <p className="mt-2 text-sm">{confirmation.provider_name} · {confirmation.specialty}</p>
+          <p className="text-sm">{new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' }).format(new Date(confirmation.starts_at))} · {confirmation.room_label}</p>
+          <p className="mt-2 font-mono text-xs">Confirmation {confirmation.id}</p>
+        </section>
+      ) : null}
     </form>
   );
 }

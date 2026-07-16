@@ -1,5 +1,5 @@
-import { EntityDashboard } from '@/components/entity/EntityDashboard';
+import { SpecialistComposer } from '@/components/SpecialistComposer';
 
 export default function SpecialistMessagesPage() {
-  return <EntityDashboard entity="specialist" view="messages" title="Messages" subtitle="Secure communication with patients, nurses, and partner facilities." />;
+  return <SpecialistComposer mode="messages" />;
 }

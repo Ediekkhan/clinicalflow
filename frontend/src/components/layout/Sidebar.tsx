@@ -50,19 +50,20 @@ export function Sidebar({ entityType, basePath, navItems, identity }: SidebarPro
           </div>
         </div>
       </div>
-      <nav className="flex-1 space-y-2 overflow-y-auto px-3 py-6">
+      <nav aria-label="Dashboard navigation" className="flex-1 space-y-2 overflow-y-auto px-3 py-6">
         {navItems.map((item) => {
           const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
           return (
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? 'page' : undefined}
               className={cn(
                 'flex items-center gap-3 rounded-lg px-4 py-3 text-base font-semibold text-slate-400 transition hover:bg-[#202852] hover:text-white',
                 active && 'bg-[#202852] text-[#a9b3ff]',
               )}
             >
-              <item.icon className="h-4 w-4" />
+              <item.icon aria-hidden="true" className="h-4 w-4" />
               {item.label}
             </Link>
           );

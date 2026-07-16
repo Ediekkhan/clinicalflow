@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Calendar, MapPin, Mic } from 'lucide-react';
+import { ArrowRight, Calendar, MapPin } from 'lucide-react';
 import { Badge } from '@/components/shared/Badge';
 import { api } from '@/lib/auth';
 
@@ -75,7 +75,7 @@ export function TriageChat() {
             <div className="mt-3 h-4 w-64 animate-pulse rounded bg-slate-100" />
           </div>
         ) : null}
-        {error ? <div className="max-w-[85%] rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div> : null}
+        {error ? <div role="alert" className="max-w-[85%] rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div> : null}
         {result ? (
           <>
             {(result.messages ?? []).map((message, index) => (
@@ -104,7 +104,7 @@ export function TriageChat() {
                 <div className="flex gap-3">
                   <Calendar className="h-5 w-5 text-[#2563EB]" />
                   <div className="w-full">
-                    <p className="font-semibold text-slate-900">Appointment confirmed</p>
+                    <p className="font-semibold text-slate-900">Suggested available appointment</p>
                     <p className="text-sm text-slate-500">{[formatSlot(result.appointment_slot.slot_start), result.appointment_slot.specialist_name, result.appointment_slot.specialty, result.appointment_slot.room_label].filter(Boolean).join(' - ')}</p>
                     {responseComplete ? (
                       <button
@@ -139,9 +139,6 @@ export function TriageChat() {
           <span className="absolute right-4 top-3 text-xs text-slate-400">{text.length}/2000</span>
         </div>
         <div className="mt-3 flex justify-end gap-2">
-          <button type="button" className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 text-slate-600" aria-label="Voice input">
-            <Mic className="h-5 w-5" />
-          </button>
           <button
             type="button"
             disabled={!text.trim() || isLoading}

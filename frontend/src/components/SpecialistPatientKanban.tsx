@@ -11,8 +11,9 @@ import { cn } from '@/lib/utils';
 const statuses: QueueStatus[] = ['QUEUED', 'BEING_SEEN', 'RESOLVED'];
 
 export function SpecialistPatientKanban({ assignedOnly = false }: { assignedOnly?: boolean }) {
-  const [tickets, setTickets] = useState<PatientTicket[]>([]);
-  const [selected, setSelected] = useState<PatientTicket | null>(null);
+  type SpecialistTicket = PatientTicket & { assigned_to_me?: boolean; status?: string };
+  const [tickets, setTickets] = useState<SpecialistTicket[]>([]);
+  const [selected, setSelected] = useState<SpecialistTicket | null>(null);
   const [tick, setTick] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -22,7 +23,8 @@ export function SpecialistPatientKanban({ assignedOnly = false }: { assignedOnly
       try {
         const endpoint = assignedOnly ? '/api/v1/specialist/patients?assigned_only=true' : '/api/v1/specialist/patients';
         const data = await api.get(endpoint);
-        if (!cancelled) setTickets(Array.isArray(data) ? (data as PatientTicket[]) : []);
+        const payload = data as { items?: SpecialistTicket[] } | SpecialistTicket[];
+        if (!cancelled) setTickets(Array.isArray(payload) ? payload : payload.items ?? []);
       } catch (error) {
         console.error(error);
         if (!cancelled) setTickets([]);
@@ -56,6 +58,12 @@ export function SpecialistPatientKanban({ assignedOnly = false }: { assignedOnly
     } catch (error) {
       console.error(error);
     }
+  }
+
+  async function assignToMe(ticketId: string) {
+    const updated = await api.patch(`/api/v1/specialist/patients/${ticketId}/assign-self`, {});
+    setTickets((current) => current.map((ticket) => ticket.id === ticketId ? { ...ticket, ...(updated as PatientTicket), assigned_to_me: true, status: 'ASSIGNED' } : ticket));
+    setSelected((current) => current?.id === ticketId ? { ...current, ...(updated as PatientTicket), assigned_to_me: true, status: 'ASSIGNED' } : current);
   }
 
   async function escalate(ticketId: string) {
@@ -134,9 +142,15 @@ export function SpecialistPatientKanban({ assignedOnly = false }: { assignedOnly
                 <p className="text-sm text-[#6B7280]">{selected.assigned_specialty}</p>
               </section>
               <div className="grid gap-3 sm:grid-cols-3">
-                <button onClick={() => void updateStatus(selected.id, 'BEING_SEEN')} className="front-desk-target bg-[#2563EB] text-white">Mark Being Seen</button>
-                <button onClick={() => void updateStatus(selected.id, 'RESOLVED')} className="front-desk-target bg-[#111827] text-white">Mark Resolved</button>
-                <button onClick={() => void escalate(selected.id)} className="front-desk-target bg-[#FEF2F2] text-[#DC2626]">Escalate to CRITICAL</button>
+                {!selected.assigned_to_me ? (
+                  <button onClick={() => void assignToMe(selected.id)} className="front-desk-target bg-[#2563EB] text-white sm:col-span-3">Assign to me</button>
+                ) : (
+                  <>
+                    <button onClick={() => void updateStatus(selected.id, 'BEING_SEEN')} className="front-desk-target bg-[#2563EB] text-white">Mark Being Seen</button>
+                    <button onClick={() => void updateStatus(selected.id, 'RESOLVED')} className="front-desk-target bg-[#111827] text-white">Mark Resolved</button>
+                    <button onClick={() => void escalate(selected.id)} className="front-desk-target bg-[#FEF2F2] text-[#DC2626]">Escalate to CRITICAL</button>
+                  </>
+                )}
               </div>
             </div>
           ) : null}

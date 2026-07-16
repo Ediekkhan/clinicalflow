@@ -9,7 +9,7 @@ export function useNotifications() {
   const [notifications, setNotifications] = useState<SynNotification[]>([]);
   const networkState = useWebSocket<{ payload?: SynNotification }>('/api/v1/ws/notifications', (event) => {
     const notification = event.payload;
-    if (!notification) return;
+    if (!notification || !notification.id || !notification.title || !notification.body) return;
     setNotifications((current) => [{ ...notification, is_read: false }, ...current]);
   });
 
