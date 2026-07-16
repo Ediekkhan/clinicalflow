@@ -23,12 +23,12 @@ export default function HospitalNotificationsClient() {
       <NetworkToast mode={networkState} />
       <main className="mx-auto grid max-w-5xl gap-5 p-4 md:p-6">
         <div>
-          <p className="text-sm font-bold uppercase tracking-wider text-[#6B7280]">Hospital Notifications</p>
-          <h1 className="font-display text-4xl text-[#111827] md:text-5xl">Clinical updates</h1>
+          <p className="text-sm font-bold uppercase tracking-wider text-[#60706a]">Hospital Notifications</p>
+          <h1 className="font-display text-4xl text-[#10231e] md:text-5xl">Clinical updates</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           {(['All', 'Unread', 'Urgent'] as Tab[]).map((item) => (
-            <button key={item} onClick={() => setTab(item)} className={`touch-target ${tab === item ? 'bg-[#2563EB] text-white' : 'bg-white text-[#111827] ring-1 ring-[#E5E7EB]'}`}>
+            <button key={item} onClick={() => setTab(item)} className={`touch-target ${tab === item ? 'bg-[#0b5d4b] text-white' : 'bg-white text-[#10231e] ring-1 ring-[#dbe2dc]'}`}>
               {item}
             </button>
           ))}
@@ -37,15 +37,15 @@ export default function HospitalNotificationsClient() {
           {visible.map((item) => {
             const Icon = item.urgency_level === 'CRITICAL' ? AlertTriangle : item.title.includes('Appointment') ? CalendarDays : Bell;
             return (
-              <article key={item.id} className="rounded-card border border-[#E5E7EB] bg-white p-4 shadow-sm">
+              <article key={item.id} className="rounded-card border border-[#dbe2dc] bg-white p-4 shadow-sm">
                 <div className="grid gap-3 md:grid-cols-[auto_1fr_auto_auto] md:items-center">
-                  <Icon className="h-5 w-5 text-[#2563EB]" />
+                  <Icon className="h-5 w-5 text-[#0b5d4b]" />
                   <div>
-                    <p className="font-bold text-[#111827]">{item.title}</p>
-                    <p className="text-sm text-[#6B7280]">{item.body}</p>
+                    <p className="font-bold text-[#10231e]">{item.title}</p>
+                    <p className="text-sm text-[#60706a]">{item.body}</p>
                   </div>
                   {item.urgency_level ? <UrgencyBadge level={item.urgency_level} /> : null}
-                  <button onClick={() => markRead(item.id)} className="touch-target bg-[#e0f2fe] text-[#2563EB]">Mark Read</button>
+                  <button onClick={() => markRead(item.id)} className="touch-target bg-[#e9f6f1] text-[#0b5d4b]">Mark Read</button>
                 </div>
               </article>
             );

@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Bell, Calendar, ClipboardList, FileText, FlaskConical, PackageCheck, Users } from 'lucide-react';
+import { AlertCircle, Bell, Calendar, ClipboardList, FileText, FlaskConical, PackageCheck, Users } from 'lucide-react';
 import { DashboardShell } from '@/components/layout/DashboardShell';
 import { Badge } from '@/components/shared/Badge';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -49,6 +49,7 @@ type EntityDashboardProps = {
   view: View;
   title?: string;
   subtitle?: string;
+  children?: ReactNode;
 };
 
 type ApiRecord = Record<string, unknown>;
@@ -142,8 +143,8 @@ function PageTitle({ title, subtitle, action }: { title: string; subtitle?: stri
   return (
     <header className="mb-9 flex flex-col justify-between gap-5 md:flex-row md:items-start">
       <div>
-        <h1 className="text-4xl font-black tracking-normal text-[#020b22]">{title}</h1>
-        {subtitle ? <p className="mt-3 text-xl text-[#526783]">{subtitle}</p> : null}
+        <h1 className="font-display text-4xl leading-tight tracking-[-0.02em] text-[#10231e] sm:text-5xl">{title}</h1>
+        {subtitle ? <p className="mt-3 max-w-3xl text-base leading-7 text-[#60706a] sm:text-lg">{subtitle}</p> : null}
       </div>
       {action}
     </header>
@@ -214,13 +215,7 @@ function RecordList({ items, view, isLoading, onNotificationClick }: { items: Ap
         const status = getString(item, ['urgency', 'urgency_level', 'status', 'queue_status', 'is_read']);
         const isNotification = view === 'notifications';
 
-        return (
-          <button
-            key={getString(item, ['id'], `${view}-${index}`)}
-            type="button"
-            onClick={isNotification ? () => onNotificationClick?.(item) : undefined}
-            className="w-full rounded-2xl border border-slate-100 bg-white p-5 text-left shadow-sm transition hover:border-[#2563EB]/40 hover:shadow-md"
-          >
+        const content = (
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h3 className="font-semibold text-slate-900">{title}</h3>
@@ -229,16 +224,75 @@ function RecordList({ items, view, isLoading, onNotificationClick }: { items: Ap
               </div>
               {status ? <Badge tone={getStatusTone(status)}>{status}</Badge> : null}
             </div>
+        );
+        return isNotification ? (
+          <button key={getString(item, ['id'], `${view}-${index}`)} type="button" onClick={() => onNotificationClick?.(item)} className="w-full rounded-[1.35rem] border border-[#dbe2dc] bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#0b5d4b]/40 hover:shadow-lg">
+            {content}
           </button>
+        ) : (
+          <article key={getString(item, ['id'], `${view}-${index}`)} className="w-full rounded-[1.35rem] border border-[#dbe2dc] bg-white p-5 text-left shadow-[0_12px_35px_rgba(7,61,51,.05)]">{content}</article>
         );
       })}
     </div>
   );
 }
 
-function SettingsPanel({ isLoading }: { isLoading: boolean }) {
+function SettingsPanel({ isLoading, items }: { isLoading: boolean; items: ApiRecord[] }) {
   if (isLoading) return <SkeletonCards />;
-  return <EmptyState icon={FileText} title="No profile fields available" body="Profile settings will appear when the API returns editable fields." />;
+  return <RecordList items={items} view="settings" isLoading={false} />;
+}
+
+const editableEntities: EntityKey[] = ['pharmacy', 'lab', 'hmo', 'moh', 'admin'];
+const nonRecordViews: View[] = ['overview', 'analytics', 'notifications', 'settings', 'utilization', 'reports', 'surveillance'];
+
+function RecordEditor({ entity, view, items, onSaved }: { entity: EntityKey; view: View; items: ApiRecord[]; onSaved: () => Promise<void> }) {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [status, setStatus] = useState('ACTIVE');
+  const [editingId, setEditingId] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setFeedback('');
+    try {
+      const endpoint = `/api/v1/${entity}/${view}${editingId ? `/${editingId}` : ''}`;
+      const payload = { title, description, status };
+      if (editingId) await api.patch(endpoint, payload);
+      else await api.post(endpoint, payload);
+      setTitle(''); setDescription(''); setStatus('ACTIVE'); setEditingId('');
+      setFeedback(editingId ? 'Record updated.' : 'Record created.');
+      await onSaved();
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : 'Unable to save record.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function edit(item: ApiRecord) {
+    setEditingId(getString(item, ['id']));
+    setTitle(getString(item, ['title', 'name']));
+    setDescription(getString(item, ['description', 'body', 'summary']));
+    setStatus(getString(item, ['status'], 'ACTIVE'));
+  }
+
+  return (
+    <section className="rounded-[1.5rem] border border-[#dbe2dc] bg-white p-5 shadow-[0_16px_45px_rgba(7,61,51,.06)]">
+      <h2 className="text-lg font-bold text-slate-900">{editingId ? 'Edit record' : 'Add record'}</h2>
+      <form onSubmit={submit} className="mt-4 grid gap-3 md:grid-cols-[1fr_1.5fr_0.7fr_auto]">
+        <input required minLength={2} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Record title" className="rounded-xl border border-slate-200 px-4 py-3 text-sm" />
+        <input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" className="rounded-xl border border-slate-200 px-4 py-3 text-sm" />
+        <select value={status} onChange={(event) => setStatus(event.target.value)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm"><option>ACTIVE</option><option>PENDING</option><option>COMPLETED</option><option>CANCELLED</option></select>
+        <button disabled={saving} className="sv-button-dark rounded-xl">{saving ? 'Saving…' : editingId ? 'Update' : 'Create'}</button>
+      </form>
+      {editingId ? <button type="button" onClick={() => { setEditingId(''); setTitle(''); setDescription(''); setStatus('ACTIVE'); }} className="mt-3 text-sm font-semibold text-slate-500">Cancel edit</button> : null}
+      {feedback ? <p className="mt-3 text-sm text-slate-600" role="status">{feedback}</p> : null}
+      {items.some((item) => item.editable === true) ? <div className="mt-4 flex flex-wrap gap-2">{items.filter((item) => item.editable === true).map((item) => <button key={getString(item, ['id'])} type="button" onClick={() => edit(item)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600">Edit {getString(item, ['title'], 'record')}</button>)}</div> : null}
+    </section>
+  );
 }
 
 function ChartPlaceholder({ chartData, isLoading }: { chartData: ApiRecord[]; isLoading: boolean }) {
@@ -253,33 +307,37 @@ function ChartPlaceholder({ chartData, isLoading }: { chartData: ApiRecord[]; is
   return <RecordList items={chartData} view="analytics" isLoading={false} />;
 }
 
-export function EntityDashboard({ entity: entityKey, view, title, subtitle }: EntityDashboardProps) {
+export function EntityDashboard({ entity: entityKey, view, title, subtitle, children }: EntityDashboardProps) {
   const entity = dashboardEntities[entityKey];
   const router = useRouter();
   const [payload, setPayload] = useState<ApiPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const data = await api.get(endpointFor(entityKey, view));
+      setPayload((data ?? {}) as ApiPayload);
+    } catch (error) {
+      console.error(error);
+      setPayload({});
+      setError(error instanceof Error ? error.message : 'Unable to load this page.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [entityKey, view]);
 
   useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-
-    async function load() {
-      try {
-        const data = await api.get(endpointFor(entityKey, view));
-        if (!cancelled) setPayload((data ?? {}) as ApiPayload);
-      } catch (error) {
-        console.error(error);
-        if (!cancelled) setPayload({});
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-
     void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [entityKey, view]);
+  }, [load]);
+
+  useEffect(() => {
+    const refresh = () => void load();
+    window.addEventListener('clinicalflow:refresh', refresh);
+    return () => window.removeEventListener('clinicalflow:refresh', refresh);
+  }, [load]);
 
   const identity = useMemo(() => {
     const source = payload?.identity;
@@ -295,7 +353,7 @@ export function EntityDashboard({ entity: entityKey, view, title, subtitle }: En
 
   const items = getItems(payload, view);
 
-  function handleNotificationClick(notification: ApiRecord) {
+  async function handleNotificationClick(notification: ApiRecord) {
     const type = getString(notification, ['type']);
     const id = getString(notification, ['id']);
 
@@ -310,6 +368,11 @@ export function EntityDashboard({ entity: entityKey, view, title, subtitle }: En
           rows: current.rows?.map(update),
         };
       });
+      try {
+        await api.patch(`/api/v1/notifications/${id}/read`, {});
+      } catch (reason) {
+        console.error(reason);
+      }
     }
 
     const patientRoutes: Record<string, string> = {
@@ -345,7 +408,10 @@ export function EntityDashboard({ entity: entityKey, view, title, subtitle }: En
     <DashboardShell entityType={entity.entityType} navItems={entity.nav} basePath={entity.basePath} identity={identity}>
       <PageTitle title={title ?? viewTitles[view]} subtitle={subtitle} />
       <div className="grid gap-6">
-        {view === 'overview' ? (
+        {children}
+        {error ? <section role="alert" className="flex flex-col items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-rose-800 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><AlertCircle aria-hidden="true" className="h-5 w-5" />{error}</span><button type="button" onClick={() => void load()} className="rounded-lg bg-white px-4 py-2 text-sm font-bold text-rose-700 shadow-sm">Try again</button></section> : null}
+        {!error && editableEntities.includes(entityKey) && !nonRecordViews.includes(view) ? <RecordEditor entity={entityKey} view={view} items={items} onSaved={load} /> : null}
+        {!error && (view === 'overview' ? (
           <>
             <StatGrid stats={payload?.stats ?? []} isLoading={isLoading} />
             <RecordList items={payload?.activity ?? []} view={view} isLoading={isLoading} />
@@ -353,10 +419,10 @@ export function EntityDashboard({ entity: entityKey, view, title, subtitle }: En
         ) : view === 'analytics' || view === 'utilization' || view === 'reports' || view === 'surveillance' ? (
           <ChartPlaceholder chartData={payload?.chartData ?? items} isLoading={isLoading} />
         ) : view === 'settings' ? (
-          <SettingsPanel isLoading={isLoading} />
+          <SettingsPanel isLoading={isLoading} items={items} />
         ) : (
           <RecordList items={items} view={view} isLoading={isLoading} onNotificationClick={handleNotificationClick} />
-        )}
+        ))}
       </div>
     </DashboardShell>
   );

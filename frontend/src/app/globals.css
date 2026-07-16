@@ -3,20 +3,23 @@
 @tailwind utilities;
 
 :root {
-  --color-brand: #2563EB;
-  --color-brand-light: #EFF6FF;
-  --color-surface: #F7F8FA;
+  --color-brand: #0b5d4b;
+  --color-brand-strong: #073d33;
+  --color-brand-light: #e9f6f1;
+  --color-accent: #d8ee72;
+  --color-gold: #d5aa55;
+  --color-surface: #f4f5ef;
   --color-panel: #FFFFFF;
-  --color-ink: #111827;
-  --color-muted: #6B7280;
-  --color-border: #E5E7EB;
+  --color-ink: #10231e;
+  --color-muted: #60706a;
+  --color-border: #dbe2dc;
   --urgency-critical-text: #DC2626;
   --urgency-critical-bg: #FEF2F2;
   --urgency-critical-border: #FCA5A5;
   --urgency-urgent-text: #D97706;
   --urgency-urgent-bg: #FFFBEB;
   --urgency-urgent-border: #FCD34D;
-  --urgency-routine-text: #2563EB;
+  --urgency-routine-text: #0b5d4b;
   --urgency-routine-bg: #EFF6FF;
   --urgency-routine-border: #93C5FD;
 }
@@ -35,11 +38,61 @@ body {
   color: var(--color-ink);
 }
 
+::selection {
+  background: var(--color-accent);
+  color: var(--color-brand-strong);
+}
+
+.sv-container {
+  @apply mx-auto w-full max-w-[1380px] px-5 sm:px-8 lg:px-12;
+}
+
+.sv-kicker {
+  @apply text-xs font-bold uppercase tracking-[0.22em];
+  color: var(--color-brand);
+}
+
+.sv-panel {
+  @apply rounded-[1.75rem] border bg-white shadow-[0_20px_70px_rgba(7,61,51,0.08)];
+  border-color: var(--color-border);
+}
+
+.sv-button-primary {
+  @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold transition hover:-translate-y-0.5 disabled:opacity-50;
+  background: var(--color-accent);
+  color: var(--color-brand-strong);
+}
+
+.sv-button-dark {
+  @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5;
+  background: var(--color-brand-strong);
+}
+
 button,
 input,
 textarea,
 select {
   font: inherit;
+}
+
+:where(a, button, input, textarea, select):focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .touch-target {

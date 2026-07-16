@@ -1,5 +1,5 @@
-import { EntityDashboard } from '@/components/entity/EntityDashboard';
+import { AppointmentScheduler } from '@/components/AppointmentScheduler';
 
 export default function ClinicAppointmentsPage() {
-  return <EntityDashboard entity="clinic" view="appointments" title="Clinic Appointments" subtitle="Today’s appointments, walk-ins, and follow-up slots." />;
+  return <main className="min-h-screen bg-slate-50 p-4 md:p-6"><AppointmentScheduler /></main>;
 }

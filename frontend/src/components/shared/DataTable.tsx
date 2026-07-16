@@ -23,7 +23,7 @@ export function DataTable({ columns, rows }: DataTableProps) {
             {rows.map((row) => (
               <tr key={row.join('-')} className="hover:bg-slate-50/60">
                 {row.map((cell, index) => (
-                  <td key={`${row.join('-')}-${index}`} className="px-7 py-5 text-base text-[#526783]">
+                  <td key={`${row.join('-')}-${index}`} className="px-7 py-5 text-base text-[#60706a]">
                     {index === row.length - 1 ? <Badge tone="success">{cell}</Badge> : cell}
                   </td>
                 ))}

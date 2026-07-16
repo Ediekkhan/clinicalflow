@@ -59,18 +59,18 @@ export function PatientOverview() {
   return (
     <DashboardShell entityType={entity.entityType} navItems={entity.nav} basePath={entity.basePath} identity={entity.identity}>
       <div className="grid gap-5">
-        <section className="rounded-2xl bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] p-6 text-white shadow-sm">
+        <section className="rounded-2xl bg-gradient-to-r from-[#0b5d4b] to-[#073d33] p-6 text-white shadow-sm">
           {isLoading ? <div className="h-9 w-64 animate-pulse rounded bg-white/20" /> : <h2 className="font-display text-3xl">Welcome back, {firstName}</h2>}
           <p className="mt-1 text-blue-50">How are you feeling today?</p>
           <div className="mt-5 flex flex-wrap gap-2">
             {['Good', 'Okay', 'Not well'].map((item) => (
-              <button key={item} onClick={() => setMood(item)} className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${mood === item ? 'bg-white text-[#2563EB]' : 'bg-white/10 text-white hover:bg-white/20'}`}>
+              <button key={item} onClick={() => setMood(item)} className={`rounded-xl px-4 py-3 text-sm font-semibold transition ${mood === item ? 'bg-white text-[#0b5d4b]' : 'bg-white/10 text-white hover:bg-white/20'}`}>
                 {item}
               </button>
             ))}
           </div>
           {mood === 'Not well' ? (
-            <Link href="/dashboard/chat" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#2563EB]">
+            <Link href="/dashboard/chat" className="mt-5 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-semibold text-[#0b5d4b]">
               Start a symptom check
               <Activity className="h-4 w-4" />
             </Link>
@@ -95,7 +95,7 @@ export function PatientOverview() {
               <div className="mt-4 space-y-3">
                 {activity.map((item, index) => (
                   <div key={item.id ?? index} className="flex items-start gap-3 rounded-xl border border-slate-100 p-3">
-                    <span className="mt-1 h-2 w-2 rounded-full bg-[#2563EB]" />
+                    <span className="mt-1 h-2 w-2 rounded-full bg-[#0b5d4b]" />
                     <div>
                       <p className="text-sm text-slate-700">{item.title ?? item.body}</p>
                       {item.created_at ? <p className="text-xs text-slate-400">{item.created_at}</p> : null}
@@ -107,7 +107,7 @@ export function PatientOverview() {
           </article>
           <article className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
             <div className="flex items-center gap-2">
-              <Lightbulb className="h-5 w-5 text-[#2563EB]" />
+              <Lightbulb className="h-5 w-5 text-[#0b5d4b]" />
               <h3 className="font-semibold text-slate-900">Health Tip</h3>
             </div>
             {dashboard?.health_tip ? (

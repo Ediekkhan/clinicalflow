@@ -1,25 +1,18 @@
-import { MessageSquareText } from 'lucide-react';
+'use client';
 
-const templates = [
-  {
-    title: 'Queue assignment',
-    body: '[PROJECT_NAME]: Ticket {{ticket_number}}. Urgency: {{urgency}}. Please wait near {{room_hint}}. Reply CANCEL to cancel an appointment.',
-  },
-  {
-    title: 'Booking confirmation',
-    body: '[PROJECT_NAME]: {{ticket_number}} booked for {{date}} {{time}}. Reply CANCEL to cancel.',
-  },
-  {
-    title: 'Shift alert',
-    body: '[PROJECT_NAME]: Your appointment {{ticket_number}} shifted to {{date}} {{time}}. Please arrive early.',
-  },
-  {
-    title: 'Cancellation',
-    body: '[PROJECT_NAME]: Appointment for {{ticket_number}} cancelled. Reply BOOK to reschedule.',
-  },
-];
+import { MessageSquareText } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/auth';
+
+type SmsTemplate = { id: string; body: string; max_segments: number };
 
 export default function SmsCanvasPage() {
+  const [templates, setTemplates] = useState<SmsTemplate[]>([]);
+
+  useEffect(() => {
+    void api.get('/api/v1/channels/templates').then((data) => setTemplates(((data as { sms?: SmsTemplate[] })?.sms ?? []))).catch(console.error);
+  }, []);
+
   return (
     <main className="min-h-screen bg-slate-50 p-4 md:p-6">
       <div className="mx-auto grid max-w-4xl gap-5">
@@ -29,13 +22,14 @@ export default function SmsCanvasPage() {
         </div>
         <div className="grid gap-3">
           {templates.map((template) => (
-            <article key={template.title} className="rounded-lg border border-slate-200 bg-white p-4">
+            <article key={template.id} className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex items-center gap-2">
                 <MessageSquareText className="h-5 w-5 text-blue-600" />
-                <h2 className="text-sm font-medium uppercase tracking-wider text-slate-500">{template.title}</h2>
+                <h2 className="text-sm font-medium uppercase tracking-wider text-slate-500">{template.id.replace('_', ' ')}</h2>
               </div>
               <p className="mt-3 font-mono text-sm leading-6 text-slate-900">{template.body}</p>
               <p className="mt-2 text-sm text-slate-600">{template.body.length} characters before token expansion.</p>
+              <p className="mt-1 text-xs font-semibold text-blue-600">Maximum {template.max_segments} SMS segments</p>
             </article>
           ))}
         </div>
@@ -43,5 +37,4 @@ export default function SmsCanvasPage() {
     </main>
   );
 }
-
 

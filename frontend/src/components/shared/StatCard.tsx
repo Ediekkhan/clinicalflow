@@ -18,11 +18,11 @@ const toneMap = {
 
 export function StatCard({ title, value, sub, tone = 'slate', icon: Icon }: StatCardProps) {
   return (
-    <article className={`rounded-[22px] border p-8 ${toneMap[tone]}`}>
+    <article className={`rounded-[1.5rem] border p-7 shadow-[0_16px_45px_rgba(7,61,51,.06)] ${toneMap[tone]}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-[#8a97b4]">{title}</p>
-          <p className="mt-3 text-4xl font-black tracking-normal text-[#020b22]">{value}</p>
+          <p className="mt-3 font-display text-4xl tracking-normal text-[#10231e]">{value}</p>
         </div>
         {Icon ? (
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/70">

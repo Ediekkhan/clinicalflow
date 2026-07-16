@@ -47,7 +47,7 @@ const patientNav: DashboardNavItem[] = [
   { label: 'Overview', href: '/dashboard', icon: Home },
   { label: 'AI Triage', href: '/dashboard/chat', icon: MessageSquare },
   { label: 'Appointments', href: '/dashboard/appointments', icon: Calendar },
-  { label: 'My Queue', href: '/dashboard/queue', icon: Ticket },
+  { label: 'My Visit', href: '/my-visit', icon: Ticket },
   { label: 'My Card', href: '/dashboard/card', icon: CreditCard },
   { label: 'Health History', href: '/dashboard/history', icon: FileText },
   { label: 'Settings', href: '/dashboard/settings', icon: Settings },

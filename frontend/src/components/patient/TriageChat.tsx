@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Calendar, MapPin, Mic } from 'lucide-react';
+import { ArrowRight, Calendar, MapPin } from 'lucide-react';
 import { Badge } from '@/components/shared/Badge';
 import { api } from '@/lib/auth';
 
@@ -53,36 +53,36 @@ export function TriageChat() {
   }
 
   return (
-    <section className="flex min-h-[calc(100vh-11rem)] flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-sm">
-      <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+    <section className="flex min-h-[640px] flex-col overflow-hidden rounded-[2rem] border border-[#dbe2dc] bg-white shadow-[0_24px_70px_rgba(7,61,51,.08)]">
+      <header className="flex items-center justify-between border-b border-[#dbe2dc] px-5 py-4 sm:px-7">
         <div>
-          <h2 className="font-semibold text-slate-900">SynaptiVerse AI</h2>
-          <p className="text-xs text-slate-400">Powered by Claude</p>
+          <h2 className="font-black text-[#10231e]">Clinical routing assistant</h2>
+          <p className="text-xs text-[#60706a]">Private, guided symptom intake</p>
         </div>
-        <span className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-blue-500" />
-          Live
+        <span className="inline-flex items-center gap-2 rounded-full bg-[#e9f6f1] px-3 py-1.5 text-xs font-black text-[#0b5d4b]">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-[#0b5d4b]" />
+          Ready
         </span>
       </header>
-      <div className="flex-1 space-y-4 overflow-y-auto bg-slate-50 p-5">
-        <div className="max-w-[82%] rounded-2xl rounded-bl-sm bg-white p-4 text-sm text-slate-700 shadow-sm">
-          Tell me what you are experiencing. Use English, Pidgin, or whatever feels natural.
+      <div className="flex-1 space-y-4 overflow-y-auto bg-[#f7f8f3] p-5 sm:p-7">
+        <div className="max-w-[88%] rounded-2xl rounded-bl-sm border border-[#dbe2dc] bg-white p-4 text-sm leading-6 text-[#50615b] shadow-sm sm:max-w-[70%]">
+          Start anywhere: tell me what hurts, when it started, and anything that makes it better or worse. English and Pidgin are both welcome.
         </div>
-        {userMessage ? <div className="ml-auto max-w-[80%] rounded-2xl rounded-br-sm bg-[#2563EB] p-4 text-sm text-white">{userMessage}</div> : null}
+        {userMessage ? <div className="ml-auto max-w-[88%] rounded-2xl rounded-br-sm bg-[#073d33] p-4 text-sm leading-6 text-white sm:max-w-[70%]">{userMessage}</div> : null}
         {isLoading ? (
           <div className="max-w-[85%] rounded-2xl bg-white p-4 shadow-sm">
             <div className="h-4 w-48 animate-pulse rounded bg-slate-100" />
             <div className="mt-3 h-4 w-64 animate-pulse rounded bg-slate-100" />
           </div>
         ) : null}
-        {error ? <div className="max-w-[85%] rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div> : null}
+        {error ? <div role="alert" className="max-w-[85%] rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}</div> : null}
         {result ? (
           <>
             {(result.messages ?? []).map((message, index) => (
               <div key={`${message}-${index}`} className="max-w-[85%] rounded-2xl bg-white p-4 text-sm text-slate-700 shadow-sm">{message}</div>
             ))}
             {(result.urgency || result.condition_name || result.severity_message) ? (
-              <div className="max-w-[85%] rounded-2xl bg-white p-4 shadow-sm">
+              <div className="max-w-[92%] rounded-2xl border border-[#dbe2dc] bg-white p-5 shadow-sm sm:max-w-[78%]">
                 {result.urgency ? <Badge tone={result.urgency === 'CRITICAL' ? 'critical' : result.urgency === 'URGENT' ? 'urgent' : 'routine'}>{result.urgency}</Badge> : null}
                 {result.condition_name ? <h3 className="mt-3 font-semibold text-slate-900">{result.condition_name}</h3> : null}
                 {result.severity_message ? <p className="mt-2 text-sm text-slate-600">{result.severity_message}</p> : null}
@@ -91,7 +91,7 @@ export function TriageChat() {
             {result.nearest_clinic ? (
               <div className="max-w-[85%] rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
                 <div className="flex gap-3">
-                  <MapPin className="h-5 w-5 text-[#2563EB]" />
+                  <MapPin className="h-5 w-5 text-[#0b5d4b]" />
                   <div>
                     <p className="font-semibold text-slate-900">{result.nearest_clinic.clinic_name ?? ''}</p>
                     <p className="text-sm text-slate-500">{[result.nearest_clinic.address, result.nearest_clinic.specialist_name].filter(Boolean).join(' - ')}</p>
@@ -102,9 +102,9 @@ export function TriageChat() {
             {result.appointment_slot ? (
               <div className="max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                 <div className="flex gap-3">
-                  <Calendar className="h-5 w-5 text-[#2563EB]" />
+                  <Calendar className="h-5 w-5 text-[#0b5d4b]" />
                   <div className="w-full">
-                    <p className="font-semibold text-slate-900">Appointment confirmed</p>
+                    <p className="font-semibold text-slate-900">Suggested available appointment</p>
                     <p className="text-sm text-slate-500">{[formatSlot(result.appointment_slot.slot_start), result.appointment_slot.specialist_name, result.appointment_slot.specialty, result.appointment_slot.room_label].filter(Boolean).join(' - ')}</p>
                     {responseComplete ? (
                       <button
@@ -126,29 +126,27 @@ export function TriageChat() {
           </>
         ) : null}
       </div>
-      <footer className="border-t border-slate-100 bg-white p-4">
+      <footer className="border-t border-[#dbe2dc] bg-white p-4 sm:p-6">
         <div className="relative">
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}
             minLength={2}
             maxLength={2000}
-            placeholder="Describe how you feel..."
-            className="min-h-24 w-full resize-none rounded-2xl border border-slate-200 p-4 pr-24 text-sm outline-none transition focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100"
+            placeholder="Example: I have had a high fever and feel weak for two days…"
+            aria-label="Describe your symptoms"
+            className="min-h-28 w-full resize-none rounded-2xl border border-[#dbe2dc] bg-[#f8f9f5] p-4 pr-24 text-sm leading-6 outline-none transition focus:border-[#0b5d4b]"
           />
           <span className="absolute right-4 top-3 text-xs text-slate-400">{text.length}/2000</span>
         </div>
         <div className="mt-3 flex justify-end gap-2">
-          <button type="button" className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 text-slate-600" aria-label="Voice input">
-            <Mic className="h-5 w-5" />
-          </button>
           <button
             type="button"
             disabled={!text.trim() || isLoading}
             onClick={() => void submitSymptoms()}
-            className="inline-flex items-center gap-2 rounded-xl bg-[#2563EB] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="sv-button-dark"
           >
-            Send
+            Analyze symptoms
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>

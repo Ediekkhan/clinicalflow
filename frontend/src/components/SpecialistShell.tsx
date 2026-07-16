@@ -1,10 +1,13 @@
-'use client';
+"use client";
 
 import Link from 'next/link';
-import { Activity, CalendarDays, LayoutDashboard, ListChecks, LogOut } from 'lucide-react';
+import { Activity, CalendarDays, LayoutDashboard, ListChecks } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NotificationBell } from '@/components/NotificationBell';
 import { api } from '@/lib/auth';
+import { Navbar } from '@/components/layout/Navbar';
+import { Footer } from '@/components/layout/Footer';
+import { PortalNav } from '@/components/layout/PortalNav';
 
 const nav = [
   { href: '/specialist/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -39,25 +42,23 @@ export function SpecialistShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] pt-12">
-      <header className="bg-[#0D1117] text-white">
+    <div className="min-h-screen bg-[#f4f5ef] pt-20">
+      <Navbar />
+
+      <div className="bg-[#073d33] text-white">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 p-4 md:p-6">
           <div>
-            <Link href="/specialist/dashboard" className="font-display text-3xl text-blue-300">SynaptiVerse</Link>
+            <Link href="/specialist/dashboard" className="font-display text-3xl text-blue-300">ClinicalFlow</Link>
             {isLoading ? <div className="mt-2 h-4 w-48 animate-pulse rounded bg-white/10" /> : <p className="text-sm text-slate-300">{[profile?.full_name, profile?.specialty].filter(Boolean).join(' · ')}</p>}
           </div>
-          <nav className="flex flex-wrap gap-2">
-            {nav.map((item) => (
-              <Link key={item.href} href={item.href} className="inline-flex min-h-12 items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-bold text-slate-200 hover:bg-white/10">
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <PortalNav items={nav} />
           <NotificationBell />
         </div>
-      </header>
-      {children}
+      </div>
+
+      <main className="mx-auto max-w-7xl p-4 md:p-6">{children}</main>
+
+      <Footer />
     </div>
   );
 }

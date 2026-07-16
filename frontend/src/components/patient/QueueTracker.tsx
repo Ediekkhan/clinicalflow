@@ -68,7 +68,7 @@ export function QueueTracker() {
       {queueItem.urgency_level ? <Badge tone={tone(queueItem.urgency_level)}>{queueItem.urgency_level}</Badge> : null}
       {queueItem.ticket_number ? <p className="mt-6 font-mono text-2xl font-bold text-slate-900">{queueItem.ticket_number}</p> : null}
       <p className="mt-7 text-sm text-slate-500">You are</p>
-      <p className="font-display text-7xl text-[#2563EB]">{queueItem.queue_position ?? '—'}</p>
+      <p className="font-display text-7xl text-[#0b5d4b]">{queueItem.queue_position ?? '—'}</p>
       <p className="text-sm text-slate-500">in queue</p>
       <div className="my-6 border-t border-slate-100" />
       {provider ? <h3 className="font-semibold text-slate-900">{provider}</h3> : null}

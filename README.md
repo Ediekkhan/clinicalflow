@@ -1,101 +1,202 @@
 # SynaptiVerse
 
-Frontend-only demo build for a multi-portal healthcare coordination platform.
+Local MVP setup for a multi-portal healthcare coordination platform with a working backend slice for tickets, queue updates, and booking flows.
 
-This repository currently contains the SynaptiVerse Next.js frontend only. The backend has been removed from this codebase, so the app is set up for demo use without a live API. Demo sessions are stored locally in the browser and every dashboard renders from generic API-shaped data or empty states until a real backend is connected.
+## What is working now
 
-## Current Status
+The repository now includes:
 
-- Frontend: Next.js App Router, React, TypeScript, Tailwind CSS.
-- Backend: intentionally removed from this repository.
-- Demo mode: enabled from `/signup` for every role.
-- Mock records: removed from dashboard displays.
-- API calls: routed through the frontend API client with a local demo fallback when demo mode is active.
+- A FastAPI backend under backend/ with SQLite persistence for local development.
+- Ticket creation, ticket listing, escalation, and queue status update endpoints under /api/v1/.
+- A tenant-aware WebSocket endpoint for triage updates.
+- A Next.js frontend that calls the backend for booking and queue views.
 
-## Demo Sign-In
+## Prerequisites
 
-Run the app, open `/signup`, and choose any workspace. The role card creates a local demo session and routes directly to that dashboard.
+- Python 3.11+
+- Node.js 18+
+- npm
 
-Available demo workspaces:
+## Cloud database options
 
-- Patient: `/dashboard`
-- Doctor / Specialist: `/specialist/dashboard`
-- Hospital / Clinic: `/hospital/dashboard`
-- Clinic: `/clinic/dashboard`
-- Pharmacy: `/pharmacy/dashboard`
-- Laboratory: `/lab/dashboard`
-- Nurse: `/nurse/dashboard`
-- HMO / Insurance: `/hmo/dashboard`
-- Government: `/moh/dashboard`
-- Admin: `/dashboard/admin`
+This project runs locally on SQLite by default, but it also supports a hosted PostgreSQL database via `DATABASE_URL`.
 
-Direct role URLs also work, for example:
+Recommended free-tier providers:
 
-```text
-/signup?type=specialist
-/signup?type=pharmacy
-/signup?type=admin
+- Supabase Postgres — easy setup, Postgres-native, great for teams.
+- Neon Postgres — serverless Postgres with a generous free tier.
+- Railway Postgres — simple deployment, quick prototyping.
+- Fly.io Postgres — good for apps already on Fly.
+- PlanetScale MySQL — possible if you prefer MySQL, but Postgres is the recommended path.
+
+For team collaboration, each developer can use local SQLite or point to a shared cloud database by setting `DATABASE_URL` in their env.
+
+## 1. Start the backend
+
+The backend supports local SQLite by default and can be overridden with `DATABASE_URL` for hosted databases.
+
+Install dependencies and apply the current schema first:
+
+```bash
+cd backend
+python -m pip install -r requirements.txt
+PYTHONPATH=$PWD python -m alembic upgrade head
 ```
 
-Admin demo access sets a local role cookie so the protected admin route can be opened during demos.
+For deployed/shared databases, set `AUTO_CREATE_SCHEMA=false`; local SQLite may keep it enabled for convenience.
 
-## Logout
+From the repository root:
 
-Every dashboard shell includes a logout control. `/logout` clears the local demo session, demo card details, and demo role cookie, then returns to `/signup`.
+```bash
+cd backend
+PYTHONPATH=$PWD /usr/local/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
 
-## Local Development
+To use a custom database URL, set `DATABASE_URL` first:
 
-```powershell
+```bash
+cd backend
+export DATABASE_URL=postgresql+asyncpg://user:password@host:5432/dbname
+PYTHONPATH=$PWD /usr/local/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+To use the example env file, copy it and edit the values:
+
+```bash
+cd backend
+cp .env.example .env
+```
+
+If you want to verify that the API is up, open another terminal and run:
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+Expected response:
+
+```json
+{"status":"ok","service":"synaptiverse"}
+```
+
+## 2. Start the frontend
+
+In a second terminal:
+
+```bash
 cd frontend
 npm install
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
+Open the UI at:
+
+```text
+http://127.0.0.1:3000
+```
+
+## 3. Test the ticket and queue flow
+
+### Option A: Use the booking form
+
 Open:
 
 ```text
-http://127.0.0.1:3000/signup
+http://127.0.0.1:3000/book
 ```
 
-## Validation
+Fill in:
 
-Useful checks:
+- Patient phone
+- Chief complaint
 
-```powershell
+Submit the form. This sends a request to the backend and creates a ticket.
+
+Then open:
+
+```text
+http://127.0.0.1:3000/clinic/queue
+```
+
+or
+
+```text
+http://127.0.0.1:3000/dashboard/queue
+```
+
+You should see the new ticket appear in the queue list.
+
+### Option B: Use the API directly
+
+Create a ticket:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/v1/tickets \
+  -H 'Content-Type: application/json' \
+  -d '{"customer_phone":"+2348000000000","raw_intake_text":"I have chest pain","channel":"WEB"}'
+```
+
+Authenticate and save the HttpOnly session cookies:
+
+```bash
+curl -s -c /tmp/synaptiverse.cookies -X POST http://127.0.0.1:8000/api/v1/auth/patient/login \
+  -H 'Content-Type: application/json' \
+  -d '{"phone":"+2348012345678","password":"Password123!"}'
+```
+
+List tickets using the authenticated tenant session:
+
+```bash
+curl -s -b /tmp/synaptiverse.cookies http://127.0.0.1:8000/api/v1/tickets
+```
+
+Escalate a ticket:
+
+```bash
+curl -s -X PATCH http://127.0.0.1:8000/api/v1/tickets/<ticket-id>/escalate \
+  -b /tmp/synaptiverse.cookies
+```
+
+## 4. Run the backend tests
+
+```bash
+cd backend
+PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/test_audit_service.py
+```
+
+## 5. Validate the frontend build
+
+```bash
 cd frontend
-npm run typecheck
 npm run build
 ```
 
-The current demo build has been typechecked with:
+## Notes for local testing
 
-```powershell
-npm run typecheck
+- The backend uses a local SQLite file at backend/synaptiverse.db.
+- The default tenant ID is 11111111-1111-1111-1111-111111111111.
+- If you hit a database schema error, remove the local SQLite file and restart the backend:
+
+```bash
+cd backend
+rm -f synaptiverse.db
 ```
 
-## API Integration Notes
+## Main routes to try
 
-The backend developer owns API implementations, authentication, persistence, WebSockets, payments, credential verification, audit logging, and deployment infrastructure. The frontend expects the eventual backend to provide endpoints under `/api/v1/...`.
+- Booking page: /book
+- Clinic queue: /clinic/queue
+- Patient queue: /dashboard/queue
+- Appointment slots: /appointments
+- Backend health: /health
 
-When a real backend is available:
-
-- Keep `NEXT_PUBLIC_API_BASE_URL` or `NEXT_PUBLIC_API_BASE` pointed at the API host.
-- Remove or disable the local demo session path when production authentication is ready.
-- Keep the loading, empty, and error states in place so dashboards do not show fallback mock records.
-
-## Project Layout
+## Project structure
 
 ```text
+backend/
+  app/                 FastAPI app, routes, models, schemas
 frontend/
-  src/app/           App Router pages
-  src/components/    Shared UI and dashboard components
-  src/hooks/         Frontend hooks
-  src/lib/           API client, dashboard config, demo session helpers, types
+  src/app/             Next.js pages and routes
+  src/components/       UI components for queues, booking, and shell layouts
+  src/lib/             API clients and shared types
 ```
-
-## Notes For Demo Day
-
-- Use `/signup` as the entry point.
-- Tap any role to enter its dashboard.
-- Dashboards show generic identities and empty states until the backend provides real data.
-- Use Logout to switch roles during a presentation.

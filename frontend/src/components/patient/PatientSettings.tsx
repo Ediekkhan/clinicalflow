@@ -80,7 +80,7 @@ export function PatientSettings() {
           {personalFields.map(({ key, label }) => (
             <label key={key} className="grid gap-1.5">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</span>
-              <input className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100" value={form[key] ?? ''} onChange={(event) => updateField(key, event.target.value)} placeholder={label} />
+              <input className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#0b5d4b] focus:ring-2 focus:ring-blue-100" value={form[key] ?? ''} onChange={(event) => updateField(key, event.target.value)} placeholder={label} />
             </label>
           ))}
         </div>
@@ -91,11 +91,11 @@ export function PatientSettings() {
           {healthFields.map(({ key, label }) => (
             <label key={key} className="grid gap-1.5">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</span>
-              <input className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-blue-100" value={form[key] ?? ''} onChange={(event) => updateField(key, event.target.value)} placeholder={label} />
+              <input className="rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#0b5d4b] focus:ring-2 focus:ring-blue-100" value={form[key] ?? ''} onChange={(event) => updateField(key, event.target.value)} placeholder={label} />
             </label>
           ))}
         </div>
-        <button type="button" disabled={isSaving} onClick={() => void saveSettings()} className="mt-5 rounded-xl bg-[#2563EB] px-5 py-3 text-sm font-semibold text-white disabled:bg-slate-300">
+        <button type="button" disabled={isSaving} onClick={() => void saveSettings()} className="mt-5 rounded-xl bg-[#0b5d4b] px-5 py-3 text-sm font-semibold text-white disabled:bg-slate-300">
           Save settings
         </button>
       </article>

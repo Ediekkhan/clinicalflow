@@ -15,7 +15,7 @@ export function TabNav({ tabs, active, onChange }: TabNavProps) {
           type="button"
           onClick={() => onChange(tab)}
           className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-            active === tab ? 'bg-[#2563EB] text-white' : 'bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-900'
+            active === tab ? 'bg-[#0b5d4b] text-white' : 'bg-white text-slate-500 ring-1 ring-slate-200 hover:text-slate-900'
           }`}
         >
           {tab}

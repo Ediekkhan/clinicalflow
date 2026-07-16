@@ -16,14 +16,16 @@ const dmSerif = DM_Serif_Display({
 });
 
 export const metadata: Metadata = {
-  title: 'SynaptiVerse',
-  description: 'Your AI Health Companion — Built for Nigeria.',
+  title: 'ClinicalFlow',
+  description: 'Your AI Health Companion.',
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${dmSans.variable} ${dmSerif.variable}`}>
-      <body className="font-ui antialiased">{children}</body>
+    <html lang="en" className={`${dmSans.variable} ${dmSerif.variable}`} suppressHydrationWarning>
+      <body className="font-ui antialiased" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
