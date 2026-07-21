@@ -3,8 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ArrowRight, FileText, Star } from 'lucide-react';
-import { Footer } from '@/components/layout/Footer';
-import { Navbar } from '@/components/layout/Navbar';
+import SiteLayout from '@/components/layout/SiteLayout';
 import { api } from '@/lib/auth';
 
 type BlogPost = { id?: string; title?: string; category?: string; excerpt?: string; published_at?: string };
@@ -17,7 +16,7 @@ const reviews = [
     title: 'Chief Technology Officer',
     company: 'Northstar Care Network',
     date: '2026-07-02',
-    body: 'SynaptiVerse gave our team a reliable operational layer that stayed fast even when multiple departments reviewed queues at once. We cut manual routing time by 42% and finally had a workflow that clinical and administrative teams could trust during peak intake windows.',
+    body: 'ClinicalFlow gave our team a reliable operational layer that stayed fast even when multiple departments reviewed queues at once. We cut manual routing time by 42% and finally had a workflow that clinical and administrative teams could trust during peak intake windows.',
   },
   {
     id: 'faster-product-rollout',
@@ -53,7 +52,7 @@ const reviews = [
     title: 'VP of Platform Strategy',
     company: 'Civic Health Systems',
     date: '2026-05-29',
-    body: 'SynaptiVerse impressed us with speed, consistency, and a clean path toward enterprise integration. The frontend-only demo let our executives evaluate the network model in a single session, while the architecture kept the door open for secure APIs and real-time data.',
+    body: 'ClinicalFlow impressed us with speed, consistency, and a clean path toward enterprise integration. The frontend-only demo let our executives evaluate the network model in a single session, while the architecture kept the door open for secure APIs and real-time data.',
   },
 ] as const;
 
@@ -68,7 +67,7 @@ function StarRating({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-1" aria-label={label}>
       {Array.from({ length: 5 }, (_, index) => (
-        <Star key={`star-${index}`} className="h-4 w-4 fill-[#2563EB] text-[#2563EB]" aria-hidden="true" />
+        <Star key={`star-${index}`} className="h-4 w-4 fill-[#0b5d4b] text-[#0b5d4b]" aria-hidden="true" />
       ))}
     </div>
   );
@@ -79,9 +78,9 @@ function ReviewsSection() {
     <section className="bg-white px-6 pb-24" aria-labelledby="reviews-heading">
       <div className="mx-auto max-w-6xl">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">User Reviews</p>
-          <h2 id="reviews-heading" className="font-display mt-3 text-4xl text-[#0F172A]">Testimonial articles from teams building faster</h2>
-          <p className="mt-4 text-base leading-7 text-slate-600">Detailed feedback from product, finance, and operations leaders evaluating SynaptiVerse for reliability, speed, and cost efficiency.</p>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">User Reviews</p>
+          <h2 id="reviews-heading" className="font-display mt-3 text-4xl text-[#10231e]">Testimonial articles from teams building faster</h2>
+          <p className="mt-4 text-base leading-7 text-slate-600">Detailed feedback from product, finance, and operations leaders evaluating ClinicalFlow for reliability, speed, and cost efficiency.</p>
         </div>
         <div className="mt-12 grid gap-5 md:grid-cols-2">
           {reviews.map((review) => (
@@ -93,21 +92,21 @@ function ReviewsSection() {
                     role="img"
                     aria-label={`Profile photo placeholder for ${review.author}`}
                     data-alt={`Profile photo placeholder for ${review.author}`}
-                    className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-dashed border-slate-300 bg-slate-100 text-sm font-black text-[#2563EB]"
+                    className="grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-dashed border-slate-300 bg-slate-100 text-sm font-black text-[#0b5d4b]"
                   >
                     {review.initials}
                   </div>
                   <div>
-                    <h3 className="text-base font-black text-[#0F172A]">{review.author}</h3>
+                    <h3 className="text-base font-black text-[#10231e]">{review.author}</h3>
                     <p className="text-sm text-slate-600">{review.title}</p>
-                    <p className="text-xs font-semibold text-[#2563EB]">{review.company}</p>
+                    <p className="text-xs font-semibold text-[#0b5d4b]">{review.company}</p>
                   </div>
                 </div>
               </header>
               <p className="mt-5 text-sm leading-7 text-slate-700">{review.body}</p>
               <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
                 <time dateTime={review.date} className="text-xs font-semibold text-slate-400">{formatDate(review.date)}</time>
-                <Link href={`/blog#${review.id}`} className="inline-flex items-center gap-2 text-sm font-bold text-[#2563EB] transition-colors duration-200 hover:text-[#1D4ED8]" aria-label={`Read full case study for ${review.author} at ${review.company}`}>
+                <Link href={`/blog#${review.id}`} className="inline-flex items-center gap-2 text-sm font-bold text-[#0b5d4b] transition-colors duration-200 hover:text-[#073d33]" aria-label={`Read full case study for ${review.author} at ${review.company}`}>
                   Read full case study
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Link>
@@ -144,11 +143,10 @@ export default function BlogPage() {
   }, []);
 
   return (
-    <main className="bg-slate-50 text-[#0F172A]">
-      <Navbar />
+    <SiteLayout>
       <section className="px-6 pb-16 pt-32 text-center">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Health Insights</p>
-        <h1 className="font-display mt-3 text-5xl text-[#0F172A]">Latest health updates</h1>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">Health Insights</p>
+        <h1 className="font-display mt-3 text-5xl text-[#10231e]">Latest health updates</h1>
       </section>
       <section className="px-6 pb-20" aria-labelledby="articles-heading">
         <h2 id="articles-heading" className="sr-only">Published articles</h2>
@@ -162,11 +160,11 @@ export default function BlogPage() {
           ) : (
             blogPosts.map((post) => (
               <article key={post.id ?? post.title} className="overflow-hidden rounded-lg border border-slate-100 bg-white shadow-sm transition hover:shadow-md">
-                <div className="grid h-48 place-items-center bg-gradient-to-br from-blue-50 to-slate-100 text-[#2563EB]"><FileText className="h-14 w-14 opacity-40" /></div>
+                <div className="grid h-48 place-items-center bg-gradient-to-br from-blue-50 to-slate-100 text-[#0b5d4b]"><FileText className="h-14 w-14 opacity-40" /></div>
                 <div className="p-5">
-                  {post.category ? <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-[#2563EB]">{post.category}</span> : null}
+                  {post.category ? <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-[#0b5d4b]">{post.category}</span> : null}
                   {post.published_at ? <p className="mt-4 text-xs text-slate-400">{formatDate(post.published_at)}</p> : null}
-                  <h2 className="mt-2 font-semibold leading-snug text-[#0F172A]">{post.title}</h2>
+                  <h2 className="mt-2 font-semibold leading-snug text-[#10231e]">{post.title}</h2>
                   {post.excerpt ? <p className="mt-2 text-sm leading-6 text-slate-500">{post.excerpt}</p> : null}
                 </div>
               </article>
@@ -175,7 +173,6 @@ export default function BlogPage() {
         </div>
       </section>
       <ReviewsSection />
-      <Footer />
-    </main>
+    </SiteLayout>
   );
 }

@@ -6,6 +6,7 @@ import { ArrowRight, Brain, CalendarCheck, CheckCircle2, Image as ImageIcon, Mai
 import { Footer } from '@/components/layout/Footer';
 import { Navbar } from '@/components/layout/Navbar';
 import { api } from '@/lib/auth';
+import { RoiCalculator } from '@/components/RoiCalculator';
 
 type PlatformStats = Record<string, number>;
 type PublicPlan = { id?: string; name?: string; price_label?: string; description?: string; cta_href?: string };
@@ -28,7 +29,7 @@ const features = [
 ] as const;
 
 const faqs = [
-  ['What is SynaptiVerse?', 'SynaptiVerse is an AI-powered healthcare coordination platform built for Nigeria.'],
+  ['What is ClinicalFlow?', 'ClinicalFlow is an AI-powered healthcare coordination platform built for Nigeria.'],
   ['How does AI triage work?', 'Patients describe symptoms, then the platform routes them based on urgency, location, and specialty.'],
   ['Is health information private?', 'Yes. Sensitive actions are protected with secure sessions, consent controls, and audit logs.'],
   ['How do I get started?', 'Create an account, complete verification where required, and connect to your care workflow.'],
@@ -43,7 +44,7 @@ function MediaPlaceholder({ label, caption, className = '' }: { label: string; c
       className={`grid place-items-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-100 p-6 text-center text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 ${className}`}
     >
       <div>
-        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white text-[#2563EB] shadow-sm dark:bg-slate-900">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white text-[#0b5d4b] shadow-sm dark:bg-slate-900">
           <ImageIcon className="h-7 w-7" aria-hidden="true" />
         </div>
         <p className="mt-4 text-sm font-semibold text-slate-700 dark:text-slate-200">{caption}</p>
@@ -64,34 +65,34 @@ function Hero() {
   const headline = headlines[current];
 
   return (
-    <section className="relative min-h-screen overflow-hidden bg-[#F8FAFC] px-6 pb-20 pt-32 text-center text-[#0F172A]">
+    <section className="relative min-h-screen overflow-hidden bg-[#F8FAFC] px-6 pb-20 pt-32 text-center text-[#10231e]">
       <div className="relative mx-auto max-w-6xl">
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-[#2563EB]">
+        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-[#0b5d4b]">
           Built for Nigeria
         </div>
         <h1 className="font-display text-5xl leading-tight md:text-7xl">
           {headline[0]}<br />
           {headline[1]}<br />
-          <span className="text-[#2563EB]">{headline[2]}</span>
+          <span className="text-[#0b5d4b]">{headline[2]}</span>
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-600">
           AI-powered symptom triage that explains urgency and connects patients to the right available care team.
         </p>
         <div className="mt-10 flex flex-wrap justify-center gap-4">
-          <Link href="/signup" className="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-8 py-4 font-semibold text-white shadow-lg shadow-blue-900/20 transition hover:-translate-y-0.5 hover:bg-[#1D4ED8]">
+          <Link href="/signup" className="inline-flex items-center gap-2 rounded-lg bg-[#0b5d4b] px-8 py-4 font-semibold text-white shadow-lg shadow-blue-900/20 transition hover:-translate-y-0.5 hover:bg-[#073d33]">
             Sign Up
             <ArrowRight className="h-5 w-5" />
           </Link>
-          <Link href="/book-demo" className="rounded-lg border border-slate-200 bg-white px-8 py-4 font-semibold text-[#0F172A] transition hover:border-[#2563EB] hover:text-[#2563EB]">Book a Demo</Link>
+          <Link href="/book-demo" className="rounded-lg border border-slate-200 bg-white px-8 py-4 font-semibold text-[#10231e] transition hover:border-[#0b5d4b] hover:text-[#0b5d4b]">Book a Demo</Link>
         </div>
         <MediaPlaceholder
-          label="SynaptiVerse application dashboard preview placeholder showing triage queues, patient cards, and routing analytics"
+          label="ClinicalFlow application dashboard preview placeholder showing triage queues, patient cards, and routing analytics"
           caption="Dashboard preview / explainer graphic"
           className="mx-auto mt-14 aspect-video w-full max-w-5xl"
         />
         <div className="mt-8 flex flex-wrap justify-center gap-6 text-xs text-slate-500">
           {['NDPA Compliant', 'HttpOnly Cookies', 'Consent Controls', 'Audit Logging'].map((item) => (
-            <span key={item} className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-[#2563EB]" />{item}</span>
+            <span key={item} className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-[#0b5d4b]" />{item}</span>
           ))}
         </div>
       </div>
@@ -109,7 +110,7 @@ function Stats({ platformStats }: { platformStats: PlatformStats | null }) {
       <div className="mx-auto grid max-w-5xl grid-cols-2 gap-6 text-center md:grid-cols-4">
         {entries.slice(0, 4).map(([label, value]) => (
           <div key={label}>
-            <p className="font-display text-4xl text-[#0F172A]">{value.toLocaleString()}</p>
+            <p className="font-display text-4xl text-[#10231e]">{value.toLocaleString()}</p>
             <p className="mt-1 text-sm capitalize text-slate-500">{label.replaceAll('_', ' ')}</p>
           </div>
         ))}
@@ -123,14 +124,14 @@ function FeatureGrid() {
     <section className="bg-white px-6 py-20">
       <div className="mx-auto max-w-6xl">
         <div className="text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Why Choose Us</p>
-          <h2 className="font-display mt-2 text-4xl text-[#0F172A]">Everything you need. Nothing you do not.</h2>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">Why Choose Us</p>
+          <h2 className="font-display mt-2 text-4xl text-[#10231e]">Everything you need. Nothing you do not.</h2>
         </div>
         <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {features.map(([title, body, Icon]) => (
             <article key={String(title)} className="rounded-lg border border-slate-100 bg-white p-6 shadow-sm transition hover:border-slate-200 hover:shadow-md">
-              <div className="grid h-12 w-12 place-items-center rounded-lg bg-blue-50 text-[#2563EB]"><Icon className="h-6 w-6" /></div>
-              <h3 className="mt-4 font-semibold text-[#0F172A]">{title}</h3>
+              <div className="grid h-12 w-12 place-items-center rounded-lg bg-blue-50 text-[#0b5d4b]"><Icon className="h-6 w-6" /></div>
+              <h3 className="mt-4 font-semibold text-[#10231e]">{title}</h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">{body}</p>
             </article>
           ))}
@@ -150,15 +151,15 @@ function SecurityProof() {
     <section className="bg-slate-50 px-6 py-20">
       <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[1fr_0.9fr] lg:items-center">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Security and trust</p>
-          <h2 className="font-display mt-2 text-4xl text-[#0F172A]">Built for sensitive health workflows</h2>
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">Security and trust</p>
+          <h2 className="font-display mt-2 text-4xl text-[#10231e]">Built for sensitive health workflows</h2>
           <p className="mt-5 max-w-2xl text-base leading-7 text-slate-600">
-            SynaptiVerse is designed around consent, role-aware workflows, audit-ready activity trails, and secure handoffs between care teams. This section is ready for a trust badge, compliance seal, or integration ecosystem map.
+            ClinicalFlow is designed around consent, role-aware workflows, audit-ready activity trails, and secure handoffs between care teams. This section is ready for a trust badge, compliance seal, or integration ecosystem map.
           </p>
           <div className="mt-6 grid gap-3 sm:grid-cols-2">
             {['Role-based dashboards', 'Audit-ready events', 'Consent-first records', 'API-ready integrations'].map((item) => (
               <div key={item} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-700">
-                <CheckCircle2 className="h-5 w-5 text-[#2563EB]" />
+                <CheckCircle2 className="h-5 w-5 text-[#0b5d4b]" />
                 {item}
               </div>
             ))}
@@ -183,14 +184,14 @@ function HowItWorks() {
   return (
     <section className="bg-white px-6 py-20">
       <div className="mx-auto max-w-6xl text-center">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">How It Works</p>
-        <h2 className="font-display mt-2 text-4xl text-[#0F172A]">From symptom to specialist</h2>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">How It Works</p>
+        <h2 className="font-display mt-2 text-4xl text-[#10231e]">From symptom to specialist</h2>
         <div className="mt-10 grid gap-4 md:grid-cols-3">
           {steps.map(([title, body, Icon], index) => (
             <article key={String(title)} className="rounded-lg border border-slate-100 bg-white p-6 text-left shadow-sm">
               <p className="font-display text-5xl text-blue-100">{index + 1}</p>
-              <div className="mt-2 grid h-12 w-12 place-items-center rounded-full bg-[#2563EB] text-white"><Icon className="h-6 w-6" /></div>
-              <h3 className="mt-4 font-semibold text-[#0F172A]">{title}</h3>
+              <div className="mt-2 grid h-12 w-12 place-items-center rounded-full bg-[#0b5d4b] text-white"><Icon className="h-6 w-6" /></div>
+              <h3 className="mt-4 font-semibold text-[#10231e]">{title}</h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">{body}</p>
             </article>
           ))}
@@ -205,15 +206,15 @@ function PricingPreview({ plans }: { plans: PublicPlan[] }) {
   return (
     <section className="bg-slate-50 px-6 py-20" id="pricing">
       <div className="mx-auto max-w-6xl text-center">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Pricing</p>
-        <h2 className="font-display mt-2 text-4xl text-[#0F172A]">Plans from the SynaptiVerse API</h2>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">Pricing</p>
+        <h2 className="font-display mt-2 text-4xl text-[#10231e]">Plans from the ClinicalFlow API</h2>
         <div className="mt-10 grid gap-5 text-left md:grid-cols-3">
           {plans.map((plan) => (
             <article key={plan.id ?? plan.name} className="relative rounded-lg border border-slate-100 bg-white p-6 shadow-sm">
-              <h3 className="font-semibold text-[#0F172A]">{plan.name}</h3>
-              <p className="font-display mt-4 text-5xl text-[#0F172A]">{plan.price_label ?? '-'}</p>
+              <h3 className="font-semibold text-[#10231e]">{plan.name}</h3>
+              <p className="font-display mt-4 text-5xl text-[#10231e]">{plan.price_label ?? '-'}</p>
               {plan.description ? <p className="mt-6 text-sm leading-7 text-slate-600">{plan.description}</p> : null}
-              <Link href={plan.cta_href ?? '/signup'} className="mt-6 inline-flex w-full justify-center rounded-lg bg-[#2563EB] px-4 py-3 text-sm font-semibold text-white">Get Started</Link>
+              <Link href={plan.cta_href ?? '/signup'} className="mt-6 inline-flex w-full justify-center rounded-lg bg-[#0b5d4b] px-4 py-3 text-sm font-semibold text-white">Get Started</Link>
             </article>
           ))}
         </div>
@@ -226,16 +227,16 @@ function Articles({ posts }: { posts: PublicArticle[] }) {
   return (
     <section className="bg-white px-6 py-20">
       <div className="mx-auto max-w-6xl text-center">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">Articles</p>
-        <h2 className="font-display mt-2 text-4xl text-[#0F172A]">Health updates</h2>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">Articles</p>
+        <h2 className="font-display mt-2 text-4xl text-[#10231e]">Health updates</h2>
         {posts.length === 0 ? (
           <div className="py-16 text-center text-slate-400"><p>No articles published yet. Check back soon.</p></div>
         ) : (
           <div className="mt-10 grid gap-4 md:grid-cols-3">
             {posts.map((post) => (
               <article key={post.id ?? post.title} className="rounded-lg border border-slate-100 bg-white p-6 text-left shadow-sm">
-                {post.category ? <p className="text-xs font-semibold text-[#2563EB]">{post.category}</p> : null}
-                <h3 className="mt-3 font-semibold text-[#0F172A]">{post.title}</h3>
+                {post.category ? <p className="text-xs font-semibold text-[#0b5d4b]">{post.category}</p> : null}
+                <h3 className="mt-3 font-semibold text-[#10231e]">{post.title}</h3>
                 {post.excerpt ? <p className="mt-2 text-sm leading-6 text-slate-500">{post.excerpt}</p> : null}
               </article>
             ))}
@@ -251,15 +252,15 @@ function Testimonials({ testimonials }: { testimonials: Testimonial[] }) {
   return (
     <section className="bg-slate-50 px-6 py-20">
       <div className="mx-auto max-w-6xl text-center">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">What People Say</p>
-        <h2 className="font-display mt-2 text-4xl text-[#0F172A]">Trusted by care teams</h2>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">What People Say</p>
+        <h2 className="font-display mt-2 text-4xl text-[#10231e]">Trusted by care teams</h2>
         <div className="mt-10 grid gap-4 md:grid-cols-3">
           {testimonials.map((card) => (
             <article key={card.id ?? card.quote} className="rounded-lg border border-slate-100 bg-white p-6 text-left shadow-sm">
               <p className="text-sm leading-6 text-slate-600">{card.quote}</p>
               <div className="mt-5 flex items-center gap-3">
-                <div className="grid h-10 w-10 place-items-center rounded-full bg-[#2563EB] text-sm font-bold text-white">{card.initials}</div>
-                <div><p className="text-sm font-semibold text-[#0F172A]">{card.name}</p><p className="text-xs text-slate-400">{card.role}</p></div>
+                <div className="grid h-10 w-10 place-items-center rounded-full bg-[#0b5d4b] text-sm font-bold text-white">{card.initials}</div>
+                <div><p className="text-sm font-semibold text-[#10231e]">{card.name}</p><p className="text-xs text-slate-400">{card.role}</p></div>
               </div>
             </article>
           ))}
@@ -274,13 +275,13 @@ function FAQ() {
   return (
     <section className="bg-slate-50 px-6 py-20">
       <div className="mx-auto max-w-2xl text-center">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#2563EB]">FAQs</p>
-        <h2 className="font-display mt-2 text-4xl text-[#0F172A]">Common questions</h2>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">FAQs</p>
+        <h2 className="font-display mt-2 text-4xl text-[#10231e]">Common questions</h2>
       </div>
       <div className="mx-auto mt-10 max-w-2xl">
         {faqs.map((faq, index) => (
           <div key={faq[0]} className="mb-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <button onClick={() => setOpen(open === index ? -1 : index)} className="flex w-full justify-between px-5 py-4 text-left text-sm font-semibold text-[#0F172A]">{faq[0]}<span>{open === index ? '-' : '+'}</span></button>
+            <button onClick={() => setOpen(open === index ? -1 : index)} className="flex w-full justify-between px-5 py-4 text-left text-sm font-semibold text-[#10231e]">{faq[0]}<span>{open === index ? '-' : '+'}</span></button>
             {open === index ? <p className="border-t border-slate-100 px-5 pb-4 pt-3 text-sm leading-6 text-slate-500">{faq[1]}</p> : null}
           </div>
         ))}
@@ -294,13 +295,13 @@ function Newsletter() {
   return (
     <section className="border-t border-slate-100 bg-white px-6 py-16 text-center">
       <div className="mx-auto max-w-lg">
-        <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-[#2563EB]"><Mail className="h-6 w-6" /></div>
-        <h2 className="font-display mt-4 text-3xl text-[#0F172A]">Stay updated</h2>
+        <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-blue-50 text-[#0b5d4b]"><Mail className="h-6 w-6" /></div>
+        <h2 className="font-display mt-4 text-3xl text-[#10231e]">Stay updated</h2>
         <form onSubmit={(event) => { event.preventDefault(); setSubscribed(true); }} className="mt-6 flex gap-2">
-          <input type="email" required placeholder="Email address" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#2563EB]" />
-          <button className="rounded-lg bg-[#2563EB] px-5 py-3 text-sm font-semibold text-white">Subscribe</button>
+          <input type="email" required placeholder="Email address" className="min-w-0 flex-1 rounded-lg border border-slate-200 px-4 py-3 text-sm outline-none focus:border-[#0b5d4b]" />
+          <button className="rounded-lg bg-[#0b5d4b] px-5 py-3 text-sm font-semibold text-white">Subscribe</button>
         </form>
-        {subscribed ? <p className="mt-3 text-sm text-[#2563EB]">Thanks. You are on the list.</p> : null}
+        {subscribed ? <p className="mt-3 text-sm text-[#0b5d4b]">Thanks. You are on the list.</p> : null}
       </div>
     </section>
   );
@@ -339,10 +340,19 @@ export function LandingPage() {
   }, []);
 
   return (
-    <main className="bg-white text-[#0F172A]">
+    <main className="bg-white text-[#10231e]">
       <Navbar />
       <Hero />
       <Stats platformStats={platformStats} />
+      <section className="bg-slate-50 px-6 py-20" id="roi">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-8 text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">Operational ROI</p>
+            <h2 className="font-display mt-2 text-4xl text-[#10231e]">Build the case for your clinic</h2>
+          </div>
+          <RoiCalculator />
+        </div>
+      </section>
       <FeatureGrid />
       <SecurityProof />
       <HowItWorks />
