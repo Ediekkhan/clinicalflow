@@ -2,30 +2,132 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, ArrowRight, Menu, X } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, Menu, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { SignupDropdown } from '@/components/layout/SignupDropdown';
 
-const links = [
-  { href: '/specialists', label: 'For specialists' },
-  { href: '/hospitals', label: 'For facilities' },
+const SIGNUP_DROPDOWN_TIMEOUT_MS = 120_000;
+
+const navLinks = [
+  { href: '/specialists', label: 'Specialists' },
+  { href: '/hospitals', label: 'Hospitals & Clinics' },
   { href: '/pricing', label: 'Pricing' },
-  { href: '/blog', label: 'Insights' },
+  { href: '/blog', label: 'Blog' },
 ];
 
 export function Navbar() {
   const pathname = usePathname();
-  const [open, setOpen] = useState(false);
-  const active = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  const [signupOpen, setSignupOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+  const timeoutRef = useRef<number | null>(null);
+
+  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
+  useEffect(() => {
+    if (!signupOpen) {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      return;
+    }
+
+    const dropdown = dropdownRef.current;
+    const closeDropdown = () => setSignupOpen(false);
+    const resetTimer = () => {
+      if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = window.setTimeout(closeDropdown, SIGNUP_DROPDOWN_TIMEOUT_MS);
+    };
+    const trackedEvents = ['mousemove', 'keydown', 'click', 'touchstart'] as const;
+
+    resetTimer();
+    trackedEvents.forEach((eventName) => dropdown?.addEventListener(eventName, resetTimer));
+
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      trackedEvents.forEach((eventName) => dropdown?.removeEventListener(eventName, resetTimer));
+    };
+  }, [signupOpen]);
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-white/10 bg-[#073d33]/95 text-white backdrop-blur-xl">
-      <div className="sv-container flex h-20 items-center justify-between">
-        <Link href="/" aria-label="ClinicalFlow home" className="inline-flex items-center gap-3 font-display text-xl sm:text-2xl"><span className="grid h-10 w-10 place-items-center rounded-full bg-[#d8ee72] text-[#073d33]"><Activity className="h-5 w-5" /></span>ClinicalFlow</Link>
-        <nav aria-label="Primary navigation" className="hidden items-center gap-7 lg:flex">{links.map((link) => <Link key={link.href} href={link.href} aria-current={active(link.href) ? 'page' : undefined} className={`text-sm font-bold transition ${active(link.href) ? 'text-[#d8ee72]' : 'text-white/65 hover:text-white'}`}>{link.label}</Link>)}</nav>
-        <div className="hidden items-center gap-2 lg:flex"><Link href="/login" className="min-h-11 rounded-full px-5 py-3 text-sm font-bold text-white/80 hover:bg-white/10">Sign in</Link><Link href="/signup" className="sv-button-primary min-h-11 py-2">Explore workspaces <ArrowRight className="h-4 w-4" /></Link></div>
-        <button type="button" onClick={() => setOpen(true)} aria-label="Open menu" className="grid h-11 w-11 place-items-center rounded-full border border-white/15 lg:hidden"><Menu className="h-5 w-5" /></button>
+    <header className="fixed left-0 top-0 z-50 w-full border-b border-slate-200 bg-white/95 text-[#0F172A] shadow-sm backdrop-blur transition-colors duration-200">
+      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 md:px-6">
+        <Link href="/" className="font-display text-2xl font-black tracking-tight" aria-label="SynaptiVerse home">
+          <span className="text-[#0F172A]">Synap</span><span className="text-[#2563EB]">tiVerse</span>
+        </Link>
+        <nav className="hidden items-center gap-8 md:flex" aria-label="Primary navigation">
+          {navLinks.map((link) => {
+            const active = isActive(link.href);
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={active ? 'page' : undefined}
+                className={`text-sm font-semibold transition-colors duration-200 ${active ? 'text-[#2563EB]' : 'text-slate-600 hover:text-[#2563EB]'}`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="hidden items-center gap-2 md:flex">
+          <Link href="/login" className="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 transition-colors duration-200 hover:text-[#2563EB]">Login</Link>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setSignupOpen((value) => !value)}
+              aria-expanded={signupOpen}
+              aria-haspopup="menu"
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#1D4ED8]"
+            >
+              Sign up for free
+              <ChevronDown className={`h-4 w-4 transition-transform duration-200 ${signupOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {signupOpen ? (
+              <div ref={dropdownRef} className="absolute right-0 top-12" role="menu" aria-label="Choose sign-up role">
+                <SignupDropdown onNavigate={() => setSignupOpen(false)} />
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <button className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200 text-[#0F172A] md:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
+          <Menu className="h-5 w-5" />
+        </button>
       </div>
-      {open ? <div className="fixed inset-0 z-[60] min-h-screen overflow-y-auto bg-[#073d33] p-6 lg:hidden"><div className="flex items-center justify-between"><Link href="/" onClick={() => setOpen(false)} className="font-display text-2xl">ClinicalFlow</Link><button type="button" onClick={() => setOpen(false)} aria-label="Close menu" className="grid h-11 w-11 place-items-center rounded-full border border-white/15"><X className="h-5 w-5" /></button></div><nav aria-label="Mobile navigation" className="mt-14 grid gap-2">{links.map((link) => <Link key={link.href} href={link.href} onClick={() => setOpen(false)} className="border-b border-white/10 py-5 font-display text-3xl text-white">{link.label}</Link>)}</nav><div className="mt-10 grid gap-3"><Link href="/login" onClick={() => setOpen(false)} className="inline-flex min-h-12 items-center justify-center rounded-full border border-white/20 font-bold">Sign in</Link><Link href="/signup" onClick={() => setOpen(false)} className="sv-button-primary">Explore workspaces</Link></div></div> : null}
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-white p-5 text-[#0F172A] md:hidden">
+          <div className="flex items-center justify-between">
+            <Link href="/" className="font-display text-2xl font-black tracking-tight" onClick={() => setMobileOpen(false)} aria-label="SynaptiVerse home">
+              <span className="text-[#0F172A]">Synap</span><span className="text-[#2563EB]">tiVerse</span>
+            </Link>
+            <button onClick={() => setMobileOpen(false)} className="grid h-10 w-10 place-items-center rounded-lg border border-slate-200" aria-label="Close menu">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <nav className="mt-8 grid gap-2" aria-label="Mobile navigation">
+            {navLinks.map((link) => {
+              const active = isActive(link.href);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileOpen(false)}
+                  aria-current={active ? 'page' : undefined}
+                  className={`rounded-lg px-3 py-3 text-sm font-semibold transition-colors duration-200 ${active ? 'bg-blue-50 text-[#2563EB]' : 'text-slate-700 hover:bg-slate-50 hover:text-[#2563EB]'}`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
+            <Link href="/login" onClick={() => setMobileOpen(false)} className="rounded-lg px-3 py-3 text-sm font-semibold text-slate-700 transition-colors duration-200 hover:bg-slate-50 hover:text-[#2563EB]">Login</Link>
+          </nav>
+          <div className="mt-6"><SignupDropdown onNavigate={() => setMobileOpen(false)} /></div>
+        </div>
+      ) : null}
     </header>
   );
 }
