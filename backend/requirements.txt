@@ -1,0 +1,14 @@
+fastapi>=0.139,<0.140
+uvicorn[standard]>=0.35,<0.36
+sqlalchemy>=2.0.51,<2.1
+alembic>=1.16,<2
+aiosqlite>=0.21,<0.22
+asyncpg>=0.30,<0.31
+neo4j>=6.0,<7
+redis>=6.4,<7
+pydantic>=2.13,<3
+pydantic-settings>=2.10,<3
+
+# Test dependencies
+pytest>=9.1,<10
+httpx2>=2.7,<3
