@@ -10,6 +10,20 @@ The repository now includes:
 - Ticket creation, ticket listing, escalation, and queue status update endpoints under /api/v1/.
 - A tenant-aware WebSocket endpoint for triage updates.
 - A Next.js frontend that calls the backend for booking and queue views.
+- Global-platform architecture scaffolding for regional policy, localization, routing factors, service boundaries, and clinical safety constraints.
+
+## Global Platform Build Spec
+
+The expanded SynaptiVerse global healthcare coordination prompt has been added at:
+
+```text
+docs/synaptiverse-global-platform-build-prompt.md
+```
+
+The prompt is also represented in code so future implementation work has a stable contract:
+
+- `frontend/src/lib/global-platform.ts` defines role workspaces, regional policy profiles, routing factors, service boundaries, and frontend safety constraints.
+- `backend/app/global_platform.py` defines Pydantic models for regional policy profiles, routing policy, and clinical safety boundaries.
 
 ## Prerequisites
 
