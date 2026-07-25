@@ -10,12 +10,12 @@ import { api } from '@/lib/auth';
 type PlatformStats = Record<string, number>;
 
 const symptomExamples = [
-  { text: 'I have had a high fever and feel very weak for two days', urgency: 'URGENT', route: 'General Medicine', time: 'See a clinician today' },
-  { text: 'Sudden chest pain and difficulty breathing', urgency: 'CRITICAL', route: 'Emergency Medicine', time: 'Seek emergency care now' },
-  { text: 'Mild itchy rash on my arm since yesterday', urgency: 'ROUTINE', route: 'Dermatology', time: 'Book the next available visit' },
+  { text: 'I have had a high fever and feel very weak for two days', urgency: 'URGENT', severity: 'MODERATE', route: 'General Medicine', time: 'See a clinician today' },
+  { text: 'Sudden chest pain and difficulty breathing', urgency: 'CRITICAL', severity: 'SEVERE', route: 'Emergency Medicine', time: 'Seek emergency care now' },
+  { text: 'Mild itchy rash on my arm since yesterday', urgency: 'ROUTINE', severity: 'MILD', route: 'Dermatology', time: 'Book the next available visit' },
 ];
 
-type PreviewResult = { urgency: string; specialty: string; recommended_timing: string; condition_name?: string; disclaimer?: string };
+type PreviewResult = { urgency: string; severity?: string; severity_label?: string; specialty: string; recommended_timing: string; condition_name?: string; possible_illness?: string; diagnosis_disclaimer?: string; disclaimer?: string };
 
 const faqs = [
   ['Is the symptom analysis a diagnosis?', 'No. It identifies possible urgency and the most appropriate care route. A qualified clinician must make the diagnosis.'],
@@ -35,7 +35,7 @@ const portals = [
 function SymptomPreview() {
   const [index, setIndex] = useState(0);
   const [text, setText] = useState(symptomExamples[0].text);
-  const [result, setResult] = useState<PreviewResult>({ urgency: symptomExamples[0].urgency, specialty: symptomExamples[0].route, recommended_timing: symptomExamples[0].time });
+  const [result, setResult] = useState<PreviewResult>({ urgency: symptomExamples[0].urgency, severity: symptomExamples[0].severity, specialty: symptomExamples[0].route, recommended_timing: symptomExamples[0].time });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -54,7 +54,7 @@ function SymptomPreview() {
   function nextExample() {
     const next = (index + 1) % symptomExamples.length;
     const example = symptomExamples[next];
-    setIndex(next); setText(example.text); setResult({ urgency: example.urgency, specialty: example.route, recommended_timing: example.time }); setError('');
+    setIndex(next); setText(example.text); setResult({ urgency: example.urgency, severity: example.severity, specialty: example.route, recommended_timing: example.time }); setError('');
   }
 
   const critical = result.urgency === 'CRITICAL';
@@ -71,8 +71,15 @@ function SymptomPreview() {
           <button type="button" onClick={nextExample} className="min-h-12 rounded-full border border-[#dbe2dc] px-4 text-sm font-bold">Try example</button>
         </div>
         <div aria-live="polite" className="mt-5 rounded-2xl border border-[#dbe2dc] bg-white p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3"><span className={`rounded-full px-3 py-1 text-xs font-black ${critical ? 'bg-rose-100 text-rose-700' : result.urgency === 'URGENT' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>{result.urgency}</span><span className="text-xs font-semibold text-[#60706a]">Illustrative preview</span></div>
-          {result.condition_name ? <p className="mt-4 text-sm text-[#60706a]">Possible pattern: <b className="text-[#10231e]">{result.condition_name}</b></p> : null}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <span className={`rounded-full px-3 py-1 text-xs font-black ${critical ? 'bg-rose-100 text-rose-700' : result.urgency === 'URGENT' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>{result.urgency}</span>
+              {result.severity ? <span className={`rounded-full px-3 py-1 text-xs font-black ${result.severity === 'SEVERE' ? 'bg-rose-100 text-rose-700' : result.severity === 'MODERATE' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>Severity: {result.severity_label ?? result.severity}</span> : null}
+            </div>
+            <span className="text-xs font-semibold text-[#60706a]">Illustrative preview</span>
+          </div>
+          {result.possible_illness ? <p className="mt-4 text-sm text-[#60706a]">Possible illness: <b className="text-[#10231e]">{result.possible_illness}</b></p> : null}
+          {result.condition_name ? <p className="mt-2 text-sm text-[#60706a]">Clinical pattern: <b className="text-[#10231e]">{result.condition_name}</b></p> : null}
           <div className="mt-4 grid gap-3 sm:grid-cols-2"><div><p className="text-xs font-bold uppercase tracking-wider text-[#60706a]">Suggested care route</p><p className="mt-1 font-black">{result.specialty}</p></div><div><p className="text-xs font-bold uppercase tracking-wider text-[#60706a]">Recommended timing</p><p className="mt-1 font-black">{result.recommended_timing}</p></div></div>
           {result.disclaimer ? <p className="mt-4 border-t border-[#dbe2dc] pt-3 text-xs leading-5 text-[#60706a]">{result.disclaimer}</p> : null}
         </div>

@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowRight, Building2, Eye, EyeOff, LogIn, UserRound } from 'lucide-react';
 import { AuthFrame } from '@/components/auth/AuthFrame';
@@ -13,7 +12,6 @@ function normalizePhone(value: string) {
 }
 
 export default function PatientLoginPage() {
-  const router = useRouter();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -32,8 +30,13 @@ export default function PatientLoginPage() {
     }
     setLoading(true);
     try {
-      await api.post('/api/v1/auth/patient/login', { phone: normalizedPhone, password });
-      router.push('/dashboard');
+      const session = await api.post('/api/v1/auth/patient/login', { phone: normalizedPhone, password });
+      if (typeof document !== 'undefined') {
+        const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+        const sessionRole = typeof session === 'object' && session && 'role' in session ? String(session.role) : 'patient';
+        document.cookie = `synaptiverse_role=${encodeURIComponent(sessionRole)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
+      }
+      window.location.assign('/dashboard');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Invalid credentials');
     } finally {

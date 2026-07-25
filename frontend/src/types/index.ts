@@ -1,4 +1,5 @@
 export type UrgencyLevel = 'CRITICAL' | 'URGENT' | 'ROUTINE';
+export type IllnessSeverity = 'MILD' | 'MODERATE' | 'SEVERE';
 export type QueueStatus = 'QUEUED' | 'BEING_SEEN' | 'RESOLVED' | 'CANCELLED';
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -61,6 +62,8 @@ export type TriageResult = {
   ticket: PatientTicket;
   condition_name: string;
   urgency: UrgencyLevel;
+  severity: IllnessSeverity;
+  severity_label?: string;
   specialty: string;
   nearest_clinic: ClinicMatch;
   appointment_slot: {

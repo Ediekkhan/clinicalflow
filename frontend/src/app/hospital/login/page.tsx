@@ -2,7 +2,6 @@
 
 import { Building2, LogIn, Stethoscope, UserCog } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/auth';
 import { AuthFrame } from '@/components/auth/AuthFrame';
@@ -14,7 +13,6 @@ const roles = [
 ] as const;
 
 export default function HospitalLoginPage() {
-  const router = useRouter();
   const [role, setRole] = useState<(typeof roles)[number]['value']>('doctor');
   const [hospitalCode, setHospitalCode] = useState('UYO-FAMILY');
   const [password, setPassword] = useState('');
@@ -35,8 +33,13 @@ export default function HospitalLoginPage() {
     setLoading(true);
     setServerError('');
     try {
-      await api.post('/api/v1/auth/hospital/account-login', { hospital_code: hospitalCode, role, password });
-      router.push(role === 'doctor' ? '/hospital/doctor/patients' : '/hospital/dashboard');
+      const session = await api.post('/api/v1/auth/hospital/account-login', { hospital_code: hospitalCode, role, password });
+      if (typeof document !== 'undefined') {
+        const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+        const sessionRole = typeof session === 'object' && session && 'role' in session ? String(session.role) : role;
+        document.cookie = `synaptiverse_role=${encodeURIComponent(sessionRole)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
+      }
+      window.location.assign('/hospital/dashboard');
     } catch (caught) {
       setServerError(caught instanceof Error ? caught.message : 'Invalid hospital credentials');
     } finally {

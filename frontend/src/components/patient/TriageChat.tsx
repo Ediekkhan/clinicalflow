@@ -6,15 +6,27 @@ import { ArrowRight, Calendar, MapPin } from 'lucide-react';
 import { Badge } from '@/components/shared/Badge';
 import { api } from '@/lib/auth';
 
+type IllnessSeverity = 'MILD' | 'MODERATE' | 'SEVERE';
+
 type TriageResponse = {
   messages?: string[];
   condition_name?: string;
+  possible_illness?: string;
+  diagnosis_disclaimer?: string;
   urgency?: 'CRITICAL' | 'URGENT' | 'ROUTINE';
+  severity?: IllnessSeverity;
+  severity_label?: string;
   severity_message?: string;
   nearest_clinic?: { clinic_name?: string; address?: string; distance_km?: number; specialist_name?: string };
   appointment_slot?: { slot_start?: string; specialist_name?: string; specialty?: string; room_label?: string };
   ticket?: { id?: string; ticket_number?: string };
 };
+
+function severityTone(severity?: IllnessSeverity) {
+  if (severity === 'SEVERE') return 'critical';
+  if (severity === 'MODERATE') return 'urgent';
+  return 'routine';
+}
 
 function formatSlot(value?: string) {
   if (!value) return '';
@@ -46,7 +58,16 @@ export function TriageChat() {
       setResult(data);
     } catch (caught) {
       console.error(caught);
-      setError(caught instanceof Error ? caught.message : 'Unable to complete triage right now.');
+      try {
+        const preview = (await api.post('/api/v1/public/triage-preview', { symptom_description: symptomText })) as TriageResponse;
+        setResult({
+          ...preview,
+          messages: ['I analyzed your symptoms in demo mode.', ...(preview.messages ?? [])],
+        });
+      } catch (fallbackError) {
+        console.error(fallbackError);
+        setError(fallbackError instanceof Error ? fallbackError.message : 'Unable to complete triage right now.');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -83,8 +104,18 @@ export function TriageChat() {
             ))}
             {(result.urgency || result.condition_name || result.severity_message) ? (
               <div className="max-w-[92%] rounded-2xl border border-[#dbe2dc] bg-white p-5 shadow-sm sm:max-w-[78%]">
-                {result.urgency ? <Badge tone={result.urgency === 'CRITICAL' ? 'critical' : result.urgency === 'URGENT' ? 'urgent' : 'routine'}>{result.urgency}</Badge> : null}
-                {result.condition_name ? <h3 className="mt-3 font-semibold text-slate-900">{result.condition_name}</h3> : null}
+                <div className="flex flex-wrap gap-2">
+                  {result.urgency ? <Badge tone={result.urgency === 'CRITICAL' ? 'critical' : result.urgency === 'URGENT' ? 'urgent' : 'routine'}>{result.urgency}</Badge> : null}
+                  {result.severity ? <Badge tone={severityTone(result.severity)}>Severity: {result.severity_label ?? result.severity}</Badge> : null}
+                </div>
+                {result.possible_illness ? (
+                  <div className="mt-4 rounded-xl bg-[#f7f8f3] p-4">
+                    <p className="text-xs font-bold uppercase tracking-wider text-[#60706a]">Possible illness</p>
+                    <p className="mt-1 font-semibold text-slate-900">{result.possible_illness}</p>
+                    {result.diagnosis_disclaimer ? <p className="mt-2 text-xs leading-5 text-slate-500">{result.diagnosis_disclaimer}</p> : null}
+                  </div>
+                ) : null}
+                {result.condition_name ? <p className="mt-3 text-sm text-slate-500">Clinical pattern: <span className="font-semibold text-slate-700">{result.condition_name}</span></p> : null}
                 {result.severity_message ? <p className="mt-2 text-sm text-slate-600">{result.severity_message}</p> : null}
               </div>
             ) : null}

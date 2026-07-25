@@ -18,7 +18,6 @@ from app.services.audit_service import AuditAction, write_audit_log
 from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, session_for_refresh_token, utc_now, verify_password
 from app.services.channel_service import SMS_TEMPLATES, intent_from_text, normalize_webhook, valid_signature
 
-
 router = APIRouter(prefix="/api/v1")
 
 KNOWN_SYMPTOM_TERMS = (
@@ -26,13 +25,83 @@ KNOWN_SYMPTOM_TERMS = (
     "headache", "nausea", "pain", "rash", "vomiting", "weakness",
 )
 
-
 def extract_symptom_terms(intake_text: str) -> str | None:
     normalized = intake_text.casefold()
     matches = [term for term in KNOWN_SYMPTOM_TERMS if term in normalized]
     return json.dumps(matches) if matches else None
 
+def severity_for_urgency(urgency: str) -> str:
+    return {"CRITICAL": "SEVERE", "URGENT": "MODERATE", "ROUTINE": "MILD"}.get(urgency, "MILD")
 
+def severity_message_for_urgency(urgency: str) -> str:
+    if urgency == "CRITICAL":
+        return "Severe presentation. Seek emergency care immediately."
+    if urgency == "URGENT":
+        return "Moderate presentation. A clinician should review this today."
+    return "Mild presentation. Book routine care unless symptoms worsen."
+
+
+def possible_illness_for_route(condition_id: str, symptom_ids: list[str]) -> str:
+    symptom_set = set(symptom_ids)
+    if condition_id == "emergency_red_flag":
+        if "chest_pain" in symptom_set or "difficulty_breathing" in symptom_set:
+            return "Possible serious heart or breathing-related emergency"
+        if "severe_bleeding" in symptom_set:
+            return "Possible severe bleeding or injury-related emergency"
+        return "Possible medical emergency"
+    if condition_id == "acute_systemic_illness":
+        if "fever" in symptom_set and "cough" in symptom_set:
+            return "Possible respiratory infection or flu-like illness"
+        if "fever" in symptom_set and ("vomiting" in symptom_set or "weakness" in symptom_set):
+            return "Possible malaria-like or systemic infection"
+        return "Possible acute infection or systemic illness"
+    if condition_id == "dermatological_complaint":
+        return "Possible skin irritation, allergy, or rash-related illness"
+    return "No specific illness pattern identified yet"
+
+def location_match_score(account: AuthAccount, tenant: Tenant) -> int:
+    patient_tokens = [token.casefold() for token in (account.lga, account.state) if token]
+    location = f"{tenant.name} {tenant.state_location}".casefold()
+    score = 0
+    for index, token in enumerate(patient_tokens):
+        if token and token in location:
+            score += 100 - (index * 25)
+    if tenant.id == account.tenant_id:
+        score += 10
+    return score
+
+
+async def select_registered_facility_for_patient(session: AsyncSession, account: AuthAccount, clinical_route: Any) -> tuple[Tenant | None, tuple[ProviderSlot, Provider] | None]:
+    async def candidate_rows(match_specialty: bool) -> list[tuple[Tenant, ProviderSlot, Provider]]:
+        filters = [
+            Tenant.status == "ACTIVE",
+            ProviderSlot.is_locked.is_(False),
+            ProviderSlot.is_booked.is_(False),
+            Provider.is_active.is_(True),
+        ]
+        if match_specialty:
+            filters.append(Provider.specialty == clinical_route.target_specialty)
+        rows = (await session.execute(
+            select(Tenant, ProviderSlot, Provider)
+            .join(ProviderSlot, ProviderSlot.tenant_id == Tenant.id)
+            .join(Provider, Provider.id == ProviderSlot.provider_id)
+            .where(*filters)
+            .order_by(ProviderSlot.starts_at.asc())
+        )).all()
+        return list(rows)
+
+    rows = await candidate_rows(True)
+    if not rows:
+        rows = await candidate_rows(False)
+    if not rows:
+        tenant = await session.get(Tenant, account.tenant_id)
+        return tenant, None
+
+    tenant, slot, provider = sorted(
+        rows,
+        key=lambda row: (-location_match_score(account, row[0]), row[1].starts_at),
+    )[0]
+    return tenant, (slot, provider)
 def build_ticket_response(ticket: Ticket) -> TicketResponse:
     return TicketResponse(
         id=ticket.id, tenant_id=ticket.tenant_id, ticket_number=ticket.ticket_number,
@@ -44,7 +113,6 @@ def build_ticket_response(ticket: Ticket) -> TicketResponse:
         raw_intake_text=ticket.raw_intake_text, extracted_symptoms=ticket.extracted_symptoms,
         version=ticket.version,
     )
-
 
 async def replayed_mutation(session: AsyncSession, tenant_id: uuid.UUID, key: str | None, action: str, resource_id: uuid.UUID) -> TicketResponse | None:
     if not key:
@@ -59,7 +127,6 @@ async def replayed_mutation(session: AsyncSession, tenant_id: uuid.UUID, key: st
     if receipt.action != action or receipt.resource_id != resource_id:
         raise HTTPException(status_code=409, detail="Idempotency key was already used for another mutation")
     return TicketResponse.model_validate_json(receipt.response_json)
-
 
 class TriageConnectionManager:
     def __init__(self) -> None:
@@ -91,15 +158,12 @@ class TriageConnectionManager:
         for websocket in dead_sockets:
             self.disconnect(tenant_id, websocket)
 
-
 triage_manager = TriageConnectionManager()
-
 
 async def enforce_rate_limit(request: Request, scope: str, limit: int, identity: str | None = None) -> None:
     client_identity = identity or (request.client.host if request.client else "unknown")
     if not await request.app.state.redis.allow(scope, client_identity, limit):
         raise HTTPException(status_code=429, detail="Too many requests; please try again shortly", headers={"Retry-After": "60"})
-
 
 def _build_profile(account: AuthAccount) -> AuthProfileResponse:
     title = "Dr. " if account.role == "specialist" else ""
@@ -117,16 +181,13 @@ def _build_profile(account: AuthAccount) -> AuthProfileResponse:
         locked_fields=[],
     )
 
-
 def _set_session_cookies(response: Response, access_token: str, refresh_token: str) -> None:
     common = {"httponly": True, "secure": settings.auth_cookie_secure, "samesite": settings.auth_cookie_samesite, "path": "/"}
     response.set_cookie(ACCESS_COOKIE, access_token, max_age=settings.auth_access_minutes * 60, **common)
     response.set_cookie(REFRESH_COOKIE, refresh_token, max_age=settings.auth_refresh_days * 86400, **common)
 
-
 def _set_role_cookie(response: Response, role: str) -> None:
     response.set_cookie("synaptiverse_role", role, max_age=settings.auth_refresh_days * 86400, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite, path="/")
-
 
 async def _login_account(account: AuthAccount, response: Response, session: AsyncSession) -> AuthSessionResponse:
     issued = await create_session(session, account)
@@ -135,7 +196,6 @@ async def _login_account(account: AuthAccount, response: Response, session: Asyn
     _set_role_cookie(response, account.role)
     return AuthSessionResponse(**_build_profile(account).model_dump(), access_expires_at=issued.session.access_expires_at)
 
-
 async def get_db(request: Request) -> AsyncSession:
     session_factory: Any = request.app.state.session_factory
     async with session_factory() as session:
@@ -143,7 +203,6 @@ async def get_db(request: Request) -> AsyncSession:
             yield session
         finally:
             await session.close()
-
 
 async def require_account(request: Request, session: AsyncSession) -> AuthAccount:
     token = request.cookies.get(ACCESS_COOKIE)
@@ -156,22 +215,18 @@ async def require_account(request: Request, session: AsyncSession) -> AuthAccoun
         await session.execute(text("SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": str(account.tenant_id)})
     return account
 
-
 async def require_roles(request: Request, session: AsyncSession, allowed: set[str]) -> AuthAccount:
     account = await require_account(request, session)
     if account.role not in allowed:
         raise HTTPException(status_code=403, detail="Insufficient role permissions")
     return account
 
-
 def public_tenant_id() -> str:
     return settings.default_tenant_id
-
 
 async def tenant_control(session: AsyncSession, tenant_id: uuid.UUID, name: str, default: bool) -> bool:
     record = await session.scalar(select(OperationalRecord).where(OperationalRecord.tenant_id == tenant_id, OperationalRecord.entity == "system", OperationalRecord.resource == "settings", OperationalRecord.title == name))
     return default if not record else record.status == "ENABLED"
-
 
 @router.websocket("/ws/triage")
 @router.websocket("/ws/notifications")
@@ -192,7 +247,6 @@ async def triage_websocket(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         triage_manager.disconnect(tenant_key, websocket)
 
-
 @router.post("/auth/{role}/login", response_model=AuthSessionResponse)
 async def login(role: str, payload: AuthLoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthSessionResponse:
     await enforce_rate_limit(request, "auth-login", settings.auth_rate_limit)
@@ -206,7 +260,6 @@ async def login(role: str, payload: AuthLoginRequest, request: Request, response
         raise HTTPException(status_code=401, detail="Invalid credentials")
     return await _login_account(account, response, session)
 
-
 @router.post("/auth/staff/pin-login", response_model=AuthSessionResponse)
 async def pin_login(payload: PinLoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthSessionResponse:
     await enforce_rate_limit(request, "auth-login", settings.auth_rate_limit)
@@ -215,7 +268,6 @@ async def pin_login(payload: PinLoginRequest, request: Request, response: Respon
     if not account or not verify_password(payload.pin, account.password_hash):
         raise HTTPException(status_code=401, detail="Invalid role or PIN")
     return await _login_account(account, response, session)
-
 
 @router.post("/auth/hospital/account-login", response_model=AuthSessionResponse)
 async def hospital_login(payload: HospitalLoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthSessionResponse:
@@ -226,7 +278,6 @@ async def hospital_login(payload: HospitalLoginRequest, request: Request, respon
         raise HTTPException(status_code=401, detail="Invalid hospital credentials")
     return await _login_account(account, response, session)
 
-
 @router.get("/auth/{role}/me", response_model=AuthProfileResponse)
 async def get_current_profile(role: str, request: Request) -> AuthProfileResponse:
     async with request.app.state.session_factory() as session:
@@ -235,7 +286,6 @@ async def get_current_profile(role: str, request: Request) -> AuthProfileRespons
         if not authenticated or authenticated[0].role != role:
             raise HTTPException(status_code=401, detail="Authentication required")
         return _build_profile(authenticated[0])
-
 
 @router.post("/auth/refresh", response_model=AuthRefreshResponse)
 async def refresh_auth(request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthRefreshResponse:
@@ -250,7 +300,6 @@ async def refresh_auth(request: Request, response: Response, session: AsyncSessi
     _set_session_cookies(response, issued.access_token, issued.refresh_token)
     return AuthRefreshResponse(access_expires_at=issued.session.access_expires_at)
 
-
 @router.post("/auth/logout", status_code=204)
 async def logout_auth(request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> Response:
     token = request.cookies.get(REFRESH_COOKIE)
@@ -264,14 +313,12 @@ async def logout_auth(request: Request, response: Response, session: AsyncSessio
     response.status_code = 204
     return response
 
-
 @router.get("/hospital/me", response_model=AuthProfileResponse)
 async def hospital_profile(request: Request, session: AsyncSession = Depends(get_db)) -> AuthProfileResponse:
     account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "admin"})
     if account.role not in {"doctor", "nurse", "hospital_admin", "admin"}:
         raise HTTPException(status_code=403, detail="Hospital staff access required")
     return _build_profile(account)
-
 
 @router.get("/hospital/waiting-room")
 async def hospital_waiting_room(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -308,14 +355,12 @@ async def hospital_waiting_room(request: Request, session: AsyncSession = Depend
         "departments": list(departments.values()),
     }
 
-
 @router.get("/hospital/settings")
 async def hospital_settings(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     account = await require_roles(request, session, {"doctor", "nurse", "hospital_admin", "admin"})
     tenant = await session.get(Tenant, account.tenant_id)
     staff = list((await session.execute(select(AuthAccount).where(AuthAccount.tenant_id == account.tenant_id, AuthAccount.role.in_(["doctor", "nurse", "hospital_admin", "admin"])))).scalars().all())
     return {"facility_name": tenant.name if tenant else "Hospital", "intake_paused": not await tenant_control(session, account.tenant_id, "intake_enabled", True), "sms_route": "SIGNED_WEBHOOK", "whatsapp_enabled": await tenant_control(session, account.tenant_id, "whatsapp_enabled", True), "staff": [{"id": str(row.id), "name": f"{row.first_name} {row.last_name}", "role": row.role, "scope": "Tenant"} for row in staff]}
-
 
 @router.patch("/hospital/settings")
 async def update_hospital_settings(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -335,16 +380,17 @@ async def update_hospital_settings(request: Request, session: AsyncSession = Dep
     await session.commit()
     return await hospital_settings(request, session)
 
-
 @router.get("/tickets", response_model=list[TicketResponse])
 async def list_tickets(request: Request, session: AsyncSession = Depends(get_db)) -> list[TicketResponse]:
     account = await require_account(request, session)
-    query = select(Ticket).where(Ticket.tenant_id == account.tenant_id)
+    query = select(Ticket)
     if account.role == "patient":
         if not account.phone:
             return []
         query = query.where(Ticket.customer_phone == account.phone)
-    elif account.role not in {"specialist", "doctor", "nurse", "hospital_admin", "admin"}:
+    elif account.role in {"specialist", "doctor", "nurse", "hospital_admin", "admin"}:
+        query = query.where(Ticket.tenant_id == account.tenant_id)
+    else:
         raise HTTPException(status_code=403, detail="Queue access not permitted")
     result = await session.execute(query.order_by(Ticket.created_at.desc()))
     tickets = result.scalars().all()
@@ -362,19 +408,19 @@ async def list_tickets(request: Request, session: AsyncSession = Depends(get_db)
         await session.commit()
     return [build_ticket_response(ticket) for ticket in tickets]
 
-
 async def persist_ticket(
     payload: TicketCreate,
     request: Request,
     session: AsyncSession,
     clinical_route: Any,
+    target_tenant_id: uuid.UUID | None = None,
 ) -> TicketResponse:
-    # Public booking is bound to the deployment's configured clinic, never a caller-controlled header.
-    tenant_id = public_tenant_id()
-    await apply_tenant_context(session, uuid.UUID(tenant_id))
+    tenant_uuid = target_tenant_id or uuid.UUID(public_tenant_id())
+    tenant_id = str(tenant_uuid)
+    await apply_tenant_context(session, tenant_uuid)
     ticket_number = f"SV-{datetime.now(UTC).strftime('%Y-%m%d')}-{uuid.uuid4().hex[:6].upper()}"
     ticket = Ticket(
-        tenant_id=uuid.UUID(tenant_id),
+        tenant_id=tenant_uuid,
         ticket_number=ticket_number,
         customer_phone=payload.customer_phone,
         raw_intake_text=payload.raw_intake_text.strip(),
@@ -413,7 +459,6 @@ async def persist_ticket(
     )
     return ticket_response
 
-
 @router.post("/tickets", response_model=TicketResponse, status_code=201)
 async def create_ticket(payload: TicketCreate, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:
     await enforce_rate_limit(request, "public-intake", settings.public_intake_rate_limit, payload.customer_phone)
@@ -423,7 +468,6 @@ async def create_ticket(payload: TicketCreate, request: Request, session: AsyncS
         raise HTTPException(status_code=503, detail="Clinic intake is temporarily paused")
     clinical_route = await request.app.state.knowledge_graph.route(payload.raw_intake_text)
     return await persist_ticket(payload, request, session, clinical_route)
-
 
 @router.post("/channels/{channel}/intake", response_model=ChannelIntakeResponse)
 async def channel_intake(
@@ -572,11 +616,9 @@ async def channel_intake(
         ticket=created,
     )
 
-
 @router.get("/channels/templates")
 async def channel_templates() -> dict[str, Any]:
     return {"sms": [{"id": key, "body": value, "max_segments": 2} for key, value in SMS_TEMPLATES.items()]}
-
 
 @router.get("/webhooks/whatsapp")
 async def verify_whatsapp_webhook(request: Request) -> Response:
@@ -586,7 +628,6 @@ async def verify_whatsapp_webhook(request: Request) -> Response:
     if mode != "subscribe" or token != settings.whatsapp_verify_token:
         raise HTTPException(status_code=403, detail="Webhook verification failed")
     return Response(content=challenge, media_type="text/plain")
-
 
 @router.post("/webhooks/{channel}")
 async def channel_webhook(channel: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -626,7 +667,6 @@ async def channel_webhook(channel: str, request: Request, session: AsyncSession 
     await session.commit()
     return {"accepted": True, "message_id": message_id, "reply": result.model_dump(mode="json")}
 
-
 @router.get("/public/platform-stats")
 async def public_platform_stats(session: AsyncSession = Depends(get_db)) -> dict[str, int]:
     tenant_id = uuid.UUID(public_tenant_id())
@@ -636,7 +676,6 @@ async def public_platform_stats(session: AsyncSession = Depends(get_db)) -> dict
         select(func.count(Ticket.id)).where(Ticket.tenant_id == tenant_id, Ticket.queue_status.in_(["QUEUED", "BEING_SEEN"]))
     )
     return {"patients_routed": int(ticket_count or 0), "active_visits": int(active_count or 0), "channels_connected": 3, "clinic_regions": 2}
-
 
 @router.post("/public/triage-preview")
 async def public_triage_preview(request: Request) -> dict[str, Any]:
@@ -650,13 +689,16 @@ async def public_triage_preview(request: Request) -> dict[str, Any]:
     timing = "Seek emergency care now" if urgency == "CRITICAL" else "See a clinician today" if urgency == "URGENT" else "Book the next available visit"
     return {
         "condition_name": clinical_route.condition_id.replace("_", " ").title(),
+        "possible_illness": possible_illness_for_route(clinical_route.condition_id, clinical_route.symptom_ids),
+        "diagnosis_disclaimer": "This is not a diagnosis. A qualified clinician must confirm what illness you have.",
         "urgency": urgency,
         "specialty": clinical_route.target_specialty,
         "recommended_timing": timing,
+        "severity": severity_for_urgency(urgency),
+        "severity_label": severity_for_urgency(urgency).title(),
         "matched_symptoms": clinical_route.symptom_ids,
         "disclaimer": "This preview is informational and does not replace assessment by a qualified clinician.",
     }
-
 
 @router.get("/public/pricing")
 async def public_pricing() -> dict[str, Any]:
@@ -666,7 +708,6 @@ async def public_pricing() -> dict[str, Any]:
         {"id": "public", "name": "Public Health", "price_label": "Partnership", "description": "State-wide coordination and reporting for care networks.", "cta_href": "/book-demo"},
     ]}
 
-
 @router.get("/public/blog-posts")
 async def public_blog_posts() -> list[dict[str, str]]:
     return [
@@ -675,14 +716,12 @@ async def public_blog_posts() -> list[dict[str, str]]:
         {"id": "human-triage", "category": "Clinical Safety", "title": "Why automated triage still needs a human overtake control", "excerpt": "Supporting nurses when real-world urgency changes faster than software."},
     ]
 
-
 @router.get("/public/testimonials")
 async def public_testimonials() -> list[dict[str, str]]:
     return [
         {"id": "demo-1", "initials": "IA", "name": "Demo Clinic Lead", "role": "Uyo pilot persona", "quote": "One queue view gives our front desk and nurses the same operational picture."},
         {"id": "demo-2", "initials": "BO", "name": "Demo Medical Director", "role": "Lagos pilot persona", "quote": "The live ticket makes waiting clearer for patients without exposing clinical details."},
     ]
-
 
 @router.post("/public/demo-requests", response_model=DemoRequestResponse, status_code=201)
 async def create_demo_request(payload: DemoRequestCreate, session: AsyncSession = Depends(get_db)) -> DemoRequestResponse:
@@ -692,7 +731,6 @@ async def create_demo_request(payload: DemoRequestCreate, session: AsyncSession 
     session.add(lead)
     await session.commit()
     return DemoRequestResponse(id=lead.id, message="Thanks — your demo request has been received.")
-
 
 @router.patch("/tickets/{ticket_id}/escalate", response_model=TicketResponse)
 async def escalate_ticket(ticket_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:
@@ -747,7 +785,6 @@ async def escalate_ticket(ticket_id: str, request: Request, session: AsyncSessio
     )
     return response
 
-
 @router.patch("/tickets/{ticket_id}", response_model=TicketResponse)
 async def update_ticket(ticket_id: str, payload: TicketUpdate, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:
     account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "admin"})
@@ -798,7 +835,6 @@ async def update_ticket(ticket_id: str, payload: TicketUpdate, request: Request,
     )
     return response
 
-
 @router.get("/appointments/slots", response_model=list[SlotResponse])
 async def list_slots(request: Request, session: AsyncSession = Depends(get_db)) -> list[SlotResponse]:
     tenant_id = uuid.UUID(public_tenant_id())
@@ -819,7 +855,6 @@ async def list_slots(request: Request, session: AsyncSession = Depends(get_db)) 
         for slot, provider in result.all()
     ]
 
-
 @router.patch("/appointments/slots/{slot_id}/lock")
 async def lock_slot(slot_id: str, payload: SlotLockRequest, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "admin"})
@@ -836,7 +871,6 @@ async def lock_slot(slot_id: str, payload: SlotLockRequest, request: Request, se
     await triage_manager.broadcast(str(account.tenant_id), {"type": "appointment.updated", "tenant_id": str(account.tenant_id), "payload": {"slot_id": slot_id, "is_locked": slot.is_locked, "lock_reason": slot.lock_reason}, "priority": "NORMAL"})
     return {"ok": True, "slot_id": slot_id, "is_locked": slot.is_locked, "lock_reason": slot.lock_reason}
 
-
 async def appointment_response(session: AsyncSession, appointment: Appointment) -> AppointmentResponse:
     slot, provider = (await session.execute(
         select(ProviderSlot, Provider).join(Provider, Provider.id == ProviderSlot.provider_id).where(ProviderSlot.id == appointment.slot_id)
@@ -847,7 +881,6 @@ async def appointment_response(session: AsyncSession, appointment: Appointment) 
         provider_name=provider.full_name, specialty=provider.specialty, room_label=provider.room_label,
         starts_at=slot.starts_at, ends_at=slot.ends_at,
     )
-
 
 @router.post("/appointments", response_model=AppointmentResponse, status_code=201)
 async def book_appointment(payload: AppointmentCreate, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
@@ -878,7 +911,6 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
     await triage_manager.broadcast(str(tenant_id), {"type": "appointment.updated", "tenant_id": str(tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
     return response
 
-
 @router.get("/appointments", response_model=list[AppointmentResponse])
 async def staff_appointments(request: Request, session: AsyncSession = Depends(get_db)) -> list[AppointmentResponse]:
     account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "admin"})
@@ -887,7 +919,6 @@ async def staff_appointments(request: Request, session: AsyncSession = Depends(g
     )
     return [await appointment_response(session, appointment) for appointment in result.scalars().all()]
 
-
 @router.get("/patient/appointments", response_model=list[AppointmentResponse])
 async def patient_appointments(request: Request, session: AsyncSession = Depends(get_db)) -> list[AppointmentResponse]:
     account = await require_account(request, session)
@@ -895,7 +926,6 @@ async def patient_appointments(request: Request, session: AsyncSession = Depends
         raise HTTPException(status_code=403, detail="Patient access required")
     result = await session.execute(select(Appointment).where(Appointment.tenant_id == account.tenant_id, Appointment.customer_phone == account.phone).order_by(Appointment.created_at.desc()))
     return [await appointment_response(session, appointment) for appointment in result.scalars().all()]
-
 
 @router.patch("/patient/profile", response_model=AuthProfileResponse)
 async def update_patient_profile(payload: PatientProfileUpdate, request: Request, session: AsyncSession = Depends(get_db)) -> AuthProfileResponse:
@@ -915,7 +945,6 @@ async def update_patient_profile(payload: PatientProfileUpdate, request: Request
     await session.commit()
     return _build_profile(account)
 
-
 @router.patch("/patient/card-details", response_model=AuthProfileResponse)
 async def update_patient_card(payload: PatientCardUpdate, request: Request, session: AsyncSession = Depends(get_db)) -> AuthProfileResponse:
     account = await require_account(request, session)
@@ -925,7 +954,6 @@ async def update_patient_card(payload: PatientCardUpdate, request: Request, sess
         setattr(account, field, value.strip() if isinstance(value, str) else value)
     await session.commit()
     return _build_profile(account)
-
 
 @router.get("/patient/history")
 async def patient_history(request: Request, session: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
@@ -951,7 +979,6 @@ async def patient_history(request: Request, session: AsyncSession = Depends(get_
         for appointment, _slot, provider in appointment_rows
     )
     return sorted(events, key=lambda event: event["created_at"], reverse=True)
-
 
 @router.get("/patient/dashboard")
 async def patient_dashboard(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -980,7 +1007,6 @@ async def patient_dashboard(request: Request, session: AsyncSession = Depends(ge
         "health_tip": {"title": "Prepare for your visit", "body": "Keep your ticket number available and bring a list of current medications."},
     }
 
-
 @router.patch("/appointments/{appointment_id}/cancel", response_model=AppointmentResponse)
 async def cancel_appointment(appointment_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
     account = await require_account(request, session)
@@ -1005,7 +1031,6 @@ async def cancel_appointment(appointment_id: str, request: Request, session: Asy
     response = await appointment_response(session, appointment)
     await triage_manager.broadcast(str(account.tenant_id), {"type": "appointment.updated", "tenant_id": str(account.tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
     return response
-
 
 @router.patch("/appointments/{appointment_id}/reschedule", response_model=AppointmentResponse)
 async def reschedule_appointment(appointment_id: str, payload: AppointmentMoveRequest, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
@@ -1037,7 +1062,6 @@ async def reschedule_appointment(appointment_id: str, payload: AppointmentMoveRe
     await triage_manager.broadcast(str(account.tenant_id), {"type": "appointment.updated", "tenant_id": str(account.tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
     return response
 
-
 @router.get("/patient/queue")
 async def patient_queue(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any] | None:
     account = await require_account(request, session)
@@ -1046,7 +1070,6 @@ async def patient_queue(request: Request, session: AsyncSession = Depends(get_db
     result = await session.execute(
         select(Ticket)
         .where(
-            Ticket.tenant_id == account.tenant_id,
             Ticket.customer_phone == account.phone,
             Ticket.queue_status.in_(["QUEUED", "BEING_SEEN"]),
         )
@@ -1058,7 +1081,7 @@ async def patient_queue(request: Request, session: AsyncSession = Depends(get_db
         return None
     ahead_result = await session.execute(
         select(Ticket.id).where(
-            Ticket.tenant_id == account.tenant_id,
+            Ticket.tenant_id == patient_ticket.tenant_id,
             Ticket.queue_status == "QUEUED",
             Ticket.created_at < patient_ticket.created_at,
         )
@@ -1068,7 +1091,6 @@ async def patient_queue(request: Request, session: AsyncSession = Depends(get_db
         "queue_position": len(ahead_result.scalars().all()) + 1 if patient_ticket.queue_status == "QUEUED" else 0,
         "queue_status": patient_ticket.queue_status,
     }
-
 
 @router.post("/patient/triage")
 async def patient_triage(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -1080,67 +1102,52 @@ async def patient_triage(request: Request, session: AsyncSession = Depends(get_d
     if len(symptom_text) < 3:
         raise HTTPException(status_code=422, detail="Describe the symptoms in a little more detail")
     clinical_route = await request.app.state.knowledge_graph.route(symptom_text)
+    selected_tenant, slot_row = await select_registered_facility_for_patient(session, account, clinical_route)
     ticket = await persist_ticket(
         TicketCreate(customer_phone=account.phone or "", raw_intake_text=symptom_text, channel="WEB"),
         request,
         session,
         clinical_route,
+        selected_tenant.id if selected_tenant else None,
     )
-    await apply_tenant_context(session, account.tenant_id)
-    slot_row = (await session.execute(
-        select(ProviderSlot, Provider)
-        .join(Provider, Provider.id == ProviderSlot.provider_id)
-        .where(
-            ProviderSlot.tenant_id == account.tenant_id,
-            ProviderSlot.is_locked.is_(False),
-            ProviderSlot.is_booked.is_(False),
-            Provider.specialty == clinical_route.target_specialty,
-        )
-        .order_by(ProviderSlot.starts_at.asc())
-        .limit(1)
-    )).one_or_none()
-    if not slot_row:
-        slot_row = (await session.execute(
-            select(ProviderSlot, Provider)
-            .join(Provider, Provider.id == ProviderSlot.provider_id)
-            .where(ProviderSlot.tenant_id == account.tenant_id, ProviderSlot.is_locked.is_(False), ProviderSlot.is_booked.is_(False))
-            .order_by(ProviderSlot.starts_at.asc()).limit(1)
-        )).one_or_none()
     slot_payload = None
     if slot_row:
         slot, provider = slot_row
         slot_payload = {"slot_id": str(slot.id), "slot_start": slot.starts_at.isoformat(), "slot_end": slot.ends_at.isoformat(), "specialist_name": provider.full_name, "specialty": provider.specialty, "room_label": provider.room_label}
     return {
         "condition_name": clinical_route.condition_id.replace("_", " ").title(),
+        "possible_illness": possible_illness_for_route(clinical_route.condition_id, clinical_route.symptom_ids),
+        "diagnosis_disclaimer": "This is not a diagnosis. A qualified clinician must confirm what illness you have.",
         "urgency": clinical_route.derived_urgency,
         "specialty": clinical_route.target_specialty,
-        "severity_message": "Seek emergency care immediately." if clinical_route.derived_urgency == "CRITICAL" else "A clinician should review this presentation.",
+        "severity": severity_for_urgency(clinical_route.derived_urgency),
+        "severity_label": severity_for_urgency(clinical_route.derived_urgency).title(),
+        "severity_message": severity_message_for_urgency(clinical_route.derived_urgency),
         "messages": [f"I identified: {', '.join(clinical_route.symptom_ids) or 'no exact symptom match'}.", f"Routing source: {clinical_route.source}."],
-        "nearest_clinic": {"clinic_name": "SynaptiVerse Demo Clinic", "address": "Uyo, Akwa Ibom", "distance_km": 0, "specialist_name": slot_row[1].full_name if slot_row else None},
+        "nearest_clinic": {"clinic_name": selected_tenant.name if selected_tenant else "", "address": selected_tenant.state_location if selected_tenant else "", "distance_km": None, "specialist_name": slot_row[1].full_name if slot_row else None, "match_basis": "Registered facility location match"},
         "appointment_slot": slot_payload,
         "ticket": {"id": str(ticket.id), "ticket_number": ticket.ticket_number},
     }
 
-
 @router.get("/notifications")
 async def notifications(request: Request, session: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
     account = await require_account(request, session)
-    ticket_query = select(Ticket).where(Ticket.tenant_id == account.tenant_id)
+    ticket_query = select(Ticket)
     if account.role == "patient":
         ticket_query = ticket_query.where(Ticket.customer_phone == account.phone)
+    else:
+        ticket_query = ticket_query.where(Ticket.tenant_id == account.tenant_id)
     tickets = list((await session.execute(ticket_query.order_by(Ticket.created_at.desc()).limit(20))).scalars().all())
     marker_prefix = f"{account.id}:"
     markers = list((await session.execute(select(OperationalRecord).where(OperationalRecord.tenant_id == account.tenant_id, OperationalRecord.entity == "notification", OperationalRecord.resource == "read", OperationalRecord.title.like(f"{marker_prefix}%")))).scalars().all())
     read_ids = {marker.title.removeprefix(marker_prefix) for marker in markers}
     return [{"id": str(ticket.id), "recipient_type": "PATIENT" if account.role == "patient" else "SPECIALIST", "recipient_id": str(account.id), "title": f"Queue update · {ticket.ticket_number}", "body": f"{ticket.queue_status.replace('_', ' ').title()} · {ticket.assigned_specialty or 'Front Desk'}", "is_read": str(ticket.id) in read_ids, "ticket_id": str(ticket.id), "urgency_level": ticket.urgency_level, "condition_name": ticket.matched_condition_id, "created_at": ticket.created_at} for ticket in tickets]
 
-
 async def mark_notification(session: AsyncSession, account: AuthAccount, ticket_id: str) -> None:
     title = f"{account.id}:{ticket_id}"
     exists = await session.scalar(select(OperationalRecord).where(OperationalRecord.tenant_id == account.tenant_id, OperationalRecord.entity == "notification", OperationalRecord.resource == "read", OperationalRecord.title == title))
     if not exists:
         session.add(OperationalRecord(tenant_id=account.tenant_id, entity="notification", resource="read", title=title, description="Notification read marker", status="READ"))
-
 
 @router.patch("/notifications/read-all")
 async def mark_all_notifications_read(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, bool]:
@@ -1153,7 +1160,6 @@ async def mark_all_notifications_read(request: Request, session: AsyncSession = 
         await mark_notification(session, account, str(ticket_id))
     await session.commit()
     return {"ok": True}
-
 
 @router.patch("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, bool]:
@@ -1168,7 +1174,6 @@ async def mark_notification_read(notification_id: str, request: Request, session
     await session.commit()
     return {"ok": True}
 
-
 OPERATIONAL_RESOURCES = {
     "dashboard", "queue", "people", "doctors", "specialists", "appointments", "analytics",
     "notifications", "settings", "schedule", "patients", "visits", "vitals", "care-plans", "departments",
@@ -1176,16 +1181,13 @@ OPERATIONAL_RESOURCES = {
     "authorizations", "claims", "facilities", "members", "payments", "utilization", "reports", "surveillance", "messages",
 }
 
-
 SPECIALIST_RESOURCES = {"dashboard", "queue", "patients", "appointments", "schedule", "notes", "messages", "earnings", "notifications", "settings"}
-
 
 async def require_specialist(request: Request, session: AsyncSession) -> AuthAccount:
     account = await require_account(request, session)
     if account.role != "specialist":
         raise HTTPException(status_code=403, detail="Specialist access required")
     return account
-
 
 @router.get("/specialist/{resource}")
 async def specialist_resource(resource: str, request: Request, assigned_only: bool = False, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -1233,7 +1235,6 @@ async def specialist_resource(resource: str, request: Request, assigned_only: bo
         return {"identity": identity, "notifications": [{**item, "title": f"Patient update · {item['ticket_number']}", "type": "QUEUE_UPDATE", "is_read": False} for item in patient_items[:10]]}
     return {"identity": identity, "items": [{"id": str(account.id), "title": identity["name"], "subtitle": account.specialty or "General Medicine", "status": "ACTIVE"}]}
 
-
 @router.patch("/specialist/patients/{ticket_id}/assign-self")
 async def assign_specialist_patient(ticket_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:
     account = await require_specialist(request, session)
@@ -1245,7 +1246,6 @@ async def assign_specialist_patient(ticket_id: str, request: Request, session: A
     ticket.assigned_specialist_id = account.id
     await session.commit()
     return build_ticket_response(ticket)
-
 
 @router.patch("/specialist/patients/{ticket_id}/status")
 async def specialist_patient_status(ticket_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:
@@ -1264,11 +1264,9 @@ async def specialist_patient_status(ticket_id: str, request: Request, session: A
     await triage_manager.broadcast(str(account.tenant_id), {"type": "ticket.updated", "tenant_id": str(account.tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
     return response
 
-
 @router.patch("/specialist/patients/{ticket_id}/escalate")
 async def specialist_patient_escalate(ticket_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:
     return await escalate_ticket(ticket_id, request, session)
-
 
 @router.post("/specialist/patients/{ticket_id}/notes", status_code=201)
 async def create_consultation_note(ticket_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -1285,7 +1283,6 @@ async def create_consultation_note(ticket_id: str, request: Request, session: As
     await session.commit()
     return {"id": str(note.id), "ticket_id": str(ticket.id), "body": note.body, "created_at": note.created_at}
 
-
 @router.post("/specialist/messages", status_code=201)
 async def create_specialist_message(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     account = await require_specialist(request, session)
@@ -1298,7 +1295,6 @@ async def create_specialist_message(request: Request, session: AsyncSession = De
     await session.commit()
     return {"id": str(message.id), "body": message.body, "created_at": message.created_at}
 
-
 @router.post("/admin/maintenance/retention")
 async def enforce_retention(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     account = await require_roles(request, session, {"admin"})
@@ -1309,7 +1305,6 @@ async def enforce_retention(request: Request, session: AsyncSession = Depends(ge
     await write_audit_log(session, AuditAction.DATA_DELETION_REQUEST, actor_id=str(account.id), actor_type="ADMIN", tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="RetentionJob", metadata={"policy": "configured_retention"})
     await session.commit()
     return {"sessions_deleted": sessions.rowcount or 0, "audit_logs_deleted": audits.rowcount or 0, "demo_leads_deleted": leads.rowcount or 0}
-
 
 @router.post("/{entity}/{resource}", status_code=201)
 async def create_operational_record(entity: str, resource: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -1324,7 +1319,6 @@ async def create_operational_record(entity: str, resource: str, request: Request
     session.add(record)
     await session.commit()
     return {"id": str(record.id), "title": record.title, "description": record.description, "status": record.status, "created_at": record.created_at}
-
 
 @router.patch("/{entity}/{resource}/{record_id}")
 async def update_operational_record(entity: str, resource: str, record_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -1344,7 +1338,6 @@ async def update_operational_record(entity: str, resource: str, record_id: str, 
     record.updated_at = utc_now()
     await session.commit()
     return {"id": str(record.id), "title": record.title, "description": record.description, "status": record.status, "updated_at": record.updated_at}
-
 
 @router.get("/{entity}/{resource}")
 async def operational_portal(entity: str, resource: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -1458,7 +1451,6 @@ async def operational_portal(entity: str, resource: str, request: Request, sessi
         label = ticket.matched_condition_id or "unclassified"
         condition_counts[label] = condition_counts.get(label, 0) + 1
     return {"identity": identity, "chartData": [{"id": label, "title": label.replace("_", " ").title(), "value": count, "status": "ACTIVE"} for label, count in sorted(condition_counts.items())]}
-
 
 def register_routes(app: Any) -> None:
     app.include_router(router)

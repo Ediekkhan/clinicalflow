@@ -2,10 +2,28 @@
 
 import { clearDemoSession, getDemoApiResponse } from '@/lib/demo-session';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
+const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
+
+function getApiBase() {
+  if (typeof window === 'undefined') return CONFIGURED_API_BASE;
+  try {
+    const configured = new URL(CONFIGURED_API_BASE);
+    if (configured.hostname === 'localhost' && window.location.hostname === '127.0.0.1') {
+      configured.hostname = '127.0.0.1';
+      return configured.toString().replace(/\/$/, '');
+    }
+    if (configured.hostname === '127.0.0.1' && window.location.hostname === 'localhost') {
+      configured.hostname = 'localhost';
+      return configured.toString().replace(/\/$/, '');
+    }
+  } catch {
+    return CONFIGURED_API_BASE;
+  }
+  return CONFIGURED_API_BASE;
+}
 
 async function refreshSession() {
-  return fetch(`${API_BASE}/api/v1/auth/refresh`, {
+  return fetch(`${getApiBase()}/api/v1/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
   });
@@ -18,7 +36,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
     if (demoResponse !== undefined) return demoResponse;
   }
 
-  const response = await fetch(`${API_BASE}${url}`, {
+  const response = await fetch(`${getApiBase()}${url}`, {
     method,
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),

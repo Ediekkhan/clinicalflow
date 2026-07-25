@@ -146,6 +146,32 @@ function entityPayload(role: DemoRole) {
   };
 }
 
+function demoTriageResponse(body?: object) {
+  const symptomText = String((body as { symptom_description?: string } | undefined)?.symptom_description ?? '').toLowerCase();
+  const critical = symptomText.includes('chest') || symptomText.includes('breath') || symptomText.includes('bleeding');
+  const routine = symptomText.includes('rash') || symptomText.includes('itch');
+  const urgency = critical ? 'CRITICAL' : routine ? 'ROUTINE' : 'URGENT';
+  const severity = critical ? 'SEVERE' : routine ? 'MILD' : 'MODERATE';
+  const possibleIllness = critical
+    ? 'Possible serious heart or breathing-related emergency'
+    : routine
+      ? 'Possible skin irritation, allergy, or rash-related illness'
+      : 'Possible acute infection or systemic illness';
+  return {
+    condition_name: critical ? 'Emergency Red Flag' : routine ? 'Dermatological Complaint' : 'Acute Systemic Illness',
+    possible_illness: possibleIllness,
+    diagnosis_disclaimer: 'This is not a diagnosis. A qualified clinician must confirm what illness you have.',
+    urgency,
+    specialty: critical ? 'Emergency Medicine' : routine ? 'Dermatology' : 'General Medicine',
+    severity,
+    severity_label: severity.charAt(0) + severity.slice(1).toLowerCase(),
+    severity_message: critical ? 'Severe presentation. Seek emergency care immediately.' : routine ? 'Mild presentation. Book routine care unless symptoms worsen.' : 'Moderate presentation. A clinician should review this today.',
+    messages: ['I identified the symptom pattern from your description.', 'Routing source: frontend demo mode.'],
+    nearest_clinic: { clinic_name: 'Demo Facility', address: 'Registered facility location', distance_km: null, specialist_name: '', match_basis: 'Registered facility location match' },
+    appointment_slot: null,
+    ticket: { id: `demo-ticket-${Date.now()}`, ticket_number: 'Demo ticket' },
+  };
+}
 export function getDemoApiResponse(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object) {
   const session = getDemoSession();
   if (!session) return undefined;
@@ -154,6 +180,10 @@ export function getDemoApiResponse(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', 
     const nextDetails = { ...getDemoCardDetails(), ...(body as Record<string, string>) };
     setDemoCardDetails(nextDetails);
     return { ...genericProfile('patient'), ...nextDetails };
+  }
+
+  if (method === 'POST' && (url === '/api/v1/patient/triage' || url === '/api/v1/public/triage-preview')) {
+    return demoTriageResponse(body);
   }
 
   if (method !== 'GET') {
