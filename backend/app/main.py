@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.config import settings
@@ -25,6 +26,35 @@ logger = logging.getLogger("synaptiverse")
 request_metrics = {"requests_total": 0, "errors_total": 0}
 
 
+async def ensure_sqlite_additive_schema(engine) -> None:
+    async with engine.begin() as conn:
+        def table_columns(sync_conn, table_name: str) -> set[str]:
+            inspector = inspect(sync_conn)
+            if table_name not in inspector.get_table_names():
+                return set()
+            return {column["name"] for column in inspector.get_columns(table_name)}
+
+        tenant_columns = await conn.run_sync(table_columns, "tenants")
+        ticket_columns = await conn.run_sync(table_columns, "tickets")
+        if tenant_columns and "latitude" not in tenant_columns:
+            await conn.execute(text("ALTER TABLE tenants ADD COLUMN latitude FLOAT"))
+        if tenant_columns and "longitude" not in tenant_columns:
+            await conn.execute(text("ALTER TABLE tenants ADD COLUMN longitude FLOAT"))
+        if tenant_columns and "accepts_patients" not in tenant_columns:
+            await conn.execute(text("ALTER TABLE tenants ADD COLUMN accepts_patients BOOLEAN NOT NULL DEFAULT 1"))
+        if ticket_columns and "patient_latitude" not in ticket_columns:
+            await conn.execute(text("ALTER TABLE tickets ADD COLUMN patient_latitude FLOAT"))
+        if ticket_columns and "patient_longitude" not in ticket_columns:
+            await conn.execute(text("ALTER TABLE tickets ADD COLUMN patient_longitude FLOAT"))
+        if ticket_columns and "routed_tenant_id" not in ticket_columns:
+            await conn.execute(text("ALTER TABLE tickets ADD COLUMN routed_tenant_id CHAR(32)"))
+        if ticket_columns and "route_distance_km" not in ticket_columns:
+            await conn.execute(text("ALTER TABLE tickets ADD COLUMN route_distance_km FLOAT"))
+        if ticket_columns:
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tickets_routed_tenant_id ON tickets (routed_tenant_id)"))
+            await conn.execute(text("UPDATE tickets SET routed_tenant_id = tenant_id WHERE routed_tenant_id IS NULL"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.engine = create_async_engine(settings.database_url, echo=False, future=True)
@@ -32,6 +62,8 @@ async def lifespan(app: FastAPI):
     if settings.auto_create_schema:
         async with app.state.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        if app.state.engine.dialect.name == "sqlite":
+            await ensure_sqlite_additive_schema(app.state.engine)
     async with app.state.session_factory() as session:
         await seed_demo_accounts(session)
     async with app.state.session_factory() as session:

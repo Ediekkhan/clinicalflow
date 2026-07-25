@@ -8,7 +8,7 @@ from typing import Any
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -17,6 +17,7 @@ from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentRe
 from app.services.audit_service import AuditAction, write_audit_log
 from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, session_for_refresh_token, utc_now, verify_password
 from app.services.channel_service import SMS_TEMPLATES, intent_from_text, normalize_webhook, valid_signature
+from app.services.facility_routing import select_nearest_eligible_hospital, valid_coordinates
 
 router = APIRouter(prefix="/api/v1")
 
@@ -59,49 +60,39 @@ def possible_illness_for_route(condition_id: str, symptom_ids: list[str]) -> str
         return "Possible skin irritation, allergy, or rash-related illness"
     return "No specific illness pattern identified yet"
 
-def location_match_score(account: AuthAccount, tenant: Tenant) -> int:
-    patient_tokens = [token.casefold() for token in (account.lga, account.state) if token]
-    location = f"{tenant.name} {tenant.state_location}".casefold()
-    score = 0
-    for index, token in enumerate(patient_tokens):
-        if token and token in location:
-            score += 100 - (index * 25)
-    if tenant.id == account.tenant_id:
-        score += 10
-    return score
+
+def coordinate_value(payload: dict[str, Any], key: str) -> float | None:
+    value = payload.get(key)
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Patient latitude and longitude must be valid numbers")
 
 
-async def select_registered_facility_for_patient(session: AsyncSession, account: AuthAccount, clinical_route: Any) -> tuple[Tenant | None, tuple[ProviderSlot, Provider] | None]:
-    async def candidate_rows(match_specialty: bool) -> list[tuple[Tenant, ProviderSlot, Provider]]:
-        filters = [
-            Tenant.status == "ACTIVE",
-            ProviderSlot.is_locked.is_(False),
-            ProviderSlot.is_booked.is_(False),
-            Provider.is_active.is_(True),
-        ]
-        if match_specialty:
-            filters.append(Provider.specialty == clinical_route.target_specialty)
-        rows = (await session.execute(
-            select(Tenant, ProviderSlot, Provider)
-            .join(ProviderSlot, ProviderSlot.tenant_id == Tenant.id)
-            .join(Provider, Provider.id == ProviderSlot.provider_id)
-            .where(*filters)
-            .order_by(ProviderSlot.starts_at.asc())
-        )).all()
-        return list(rows)
+def patient_coordinates_from_payload(payload: dict[str, Any]) -> tuple[float, float]:
+    latitude = coordinate_value(payload, "latitude")
+    longitude = coordinate_value(payload, "longitude")
+    if latitude is None or longitude is None:
+        raise HTTPException(status_code=422, detail="Patient location is required to route this ticket to the nearest registered hospital")
+    if not valid_coordinates(latitude, longitude):
+        raise HTTPException(status_code=422, detail="Patient coordinates are outside the valid latitude/longitude range")
+    return latitude, longitude
 
-    rows = await candidate_rows(True)
-    if not rows:
-        rows = await candidate_rows(False)
-    if not rows:
-        tenant = await session.get(Tenant, account.tenant_id)
-        return tenant, None
 
-    tenant, slot, provider = sorted(
-        rows,
-        key=lambda row: (-location_match_score(account, row[0]), row[1].starts_at),
-    )[0]
-    return tenant, (slot, provider)
+def ticket_visible_to_tenant(tenant_id: uuid.UUID):
+    return or_(Ticket.tenant_id == tenant_id, Ticket.routed_tenant_id == tenant_id)
+
+
+def ticket_destination_queue(tenant_id: uuid.UUID):
+    return or_(Ticket.routed_tenant_id == tenant_id, (Ticket.routed_tenant_id.is_(None) & (Ticket.tenant_id == tenant_id)))
+
+
+def ticket_destination_id(ticket: Ticket) -> uuid.UUID:
+    return ticket.routed_tenant_id or ticket.tenant_id
+
+
 def build_ticket_response(ticket: Ticket) -> TicketResponse:
     return TicketResponse(
         id=ticket.id, tenant_id=ticket.tenant_id, ticket_number=ticket.ticket_number,
@@ -109,7 +100,9 @@ def build_ticket_response(ticket: Ticket) -> TicketResponse:
         channel=ticket.channel, urgency_level=ticket.urgency_level,
         matched_condition_id=ticket.matched_condition_id, assigned_specialty=ticket.assigned_specialty,
         queue_status=ticket.queue_status, is_manually_escalated=ticket.is_manually_escalated,
-        appointment_slot=ticket.appointment_slot, created_at=ticket.created_at,
+        appointment_slot=ticket.appointment_slot, patient_latitude=ticket.patient_latitude,
+        patient_longitude=ticket.patient_longitude, routed_tenant_id=ticket.routed_tenant_id,
+        route_distance_km=ticket.route_distance_km, created_at=ticket.created_at,
         raw_intake_text=ticket.raw_intake_text, extracted_symptoms=ticket.extracted_symptoms,
         version=ticket.version,
     )
@@ -159,6 +152,14 @@ class TriageConnectionManager:
             self.disconnect(tenant_id, websocket)
 
 triage_manager = TriageConnectionManager()
+
+async def broadcast_ticket_event(ticket: Ticket, event_type: str, payload: dict[str, Any], priority: str = "NORMAL") -> None:
+    tenant_ids = {str(ticket.tenant_id), str(ticket.routed_tenant_id or ticket.tenant_id)}
+    for tenant_id in tenant_ids:
+        await triage_manager.broadcast(
+            tenant_id,
+            {"type": event_type, "tenant_id": tenant_id, "payload": payload, "priority": priority},
+        )
 
 async def enforce_rate_limit(request: Request, scope: str, limit: int, identity: str | None = None) -> None:
     client_identity = identity or (request.client.host if request.client else "unknown")
@@ -325,7 +326,7 @@ async def hospital_waiting_room(request: Request, session: AsyncSession = Depend
     account = await require_roles(request, session, {"doctor", "nurse", "hospital_admin", "admin"})
     result = await session.execute(
         select(Ticket)
-        .where(Ticket.tenant_id == account.tenant_id, Ticket.queue_status.in_(["QUEUED", "BEING_SEEN"]))
+        .where(ticket_visible_to_tenant(account.tenant_id), Ticket.queue_status.in_(["QUEUED", "BEING_SEEN"]))
         .order_by(Ticket.created_at.asc())
     )
     tickets = list(result.scalars().all())
@@ -389,7 +390,7 @@ async def list_tickets(request: Request, session: AsyncSession = Depends(get_db)
             return []
         query = query.where(Ticket.customer_phone == account.phone)
     elif account.role in {"specialist", "doctor", "nurse", "hospital_admin", "admin"}:
-        query = query.where(Ticket.tenant_id == account.tenant_id)
+        query = query.where(ticket_visible_to_tenant(account.tenant_id))
     else:
         raise HTTPException(status_code=403, detail="Queue access not permitted")
     result = await session.execute(query.order_by(Ticket.created_at.desc()))
@@ -414,8 +415,13 @@ async def persist_ticket(
     session: AsyncSession,
     clinical_route: Any,
     target_tenant_id: uuid.UUID | None = None,
+    routed_tenant_id: uuid.UUID | None = None,
+    patient_latitude: float | None = None,
+    patient_longitude: float | None = None,
+    route_distance_km: float | None = None,
 ) -> TicketResponse:
     tenant_uuid = target_tenant_id or uuid.UUID(public_tenant_id())
+    routed_uuid = routed_tenant_id or tenant_uuid
     tenant_id = str(tenant_uuid)
     await apply_tenant_context(session, tenant_uuid)
     ticket_number = f"SV-{datetime.now(UTC).strftime('%Y-%m%d')}-{uuid.uuid4().hex[:6].upper()}"
@@ -432,6 +438,10 @@ async def persist_ticket(
         assigned_specialty=clinical_route.target_specialty,
         queue_status="QUEUED",
         appointment_slot=payload.appointment_slot,
+        patient_latitude=patient_latitude,
+        patient_longitude=patient_longitude,
+        routed_tenant_id=routed_uuid,
+        route_distance_km=route_distance_km,
     )
     session.add(ticket)
     await session.flush()
@@ -448,15 +458,7 @@ async def persist_ticket(
     )
     await session.commit()
     ticket_response = build_ticket_response(ticket)
-    await triage_manager.broadcast(
-        tenant_id,
-        {
-            "type": "ticket.created",
-            "tenant_id": tenant_id,
-            "payload": ticket_response.model_dump(),
-            "priority": "NORMAL",
-        },
-    )
+    await broadcast_ticket_event(ticket, "ticket.created", ticket_response.model_dump())
     return ticket_response
 
 @router.post("/tickets", response_model=TicketResponse, status_code=201)
@@ -741,7 +743,7 @@ async def escalate_ticket(ticket_id: str, request: Request, session: AsyncSessio
     replay = await replayed_mutation(session, account.tenant_id, idempotency_key, "TICKET_ESCALATE", resource_id)
     if replay:
         return replay
-    ticket = await session.scalar(select(Ticket).where(Ticket.id == resource_id, Ticket.tenant_id == account.tenant_id).with_for_update())
+    ticket = await session.scalar(select(Ticket).where(Ticket.id == resource_id, ticket_visible_to_tenant(account.tenant_id)).with_for_update())
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     replay = await replayed_mutation(session, account.tenant_id, idempotency_key, "TICKET_ESCALATE", resource_id)
@@ -774,15 +776,7 @@ async def escalate_ticket(ticket_id: str, request: Request, session: AsyncSessio
     if idempotency_key:
         session.add(ClientMutation(tenant_id=account.tenant_id, idempotency_key=idempotency_key, action="TICKET_ESCALATE", resource_id=resource_id, response_json=response.model_dump_json()))
     await session.commit()
-    await triage_manager.broadcast(
-        tenant_id,
-        {
-            "type": "ticket.escalated",
-            "tenant_id": tenant_id,
-            "payload": response.model_dump(),
-            "priority": "HIGH",
-        },
-    )
+    await broadcast_ticket_event(ticket, "ticket.escalated", response.model_dump(), "HIGH")
     return response
 
 @router.patch("/tickets/{ticket_id}", response_model=TicketResponse)
@@ -794,7 +788,7 @@ async def update_ticket(ticket_id: str, payload: TicketUpdate, request: Request,
     replay = await replayed_mutation(session, account.tenant_id, idempotency_key, "TICKET_UPDATE", resource_id)
     if replay:
         return replay
-    ticket = await session.scalar(select(Ticket).where(Ticket.id == resource_id, Ticket.tenant_id == account.tenant_id).with_for_update())
+    ticket = await session.scalar(select(Ticket).where(Ticket.id == resource_id, ticket_visible_to_tenant(account.tenant_id)).with_for_update())
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     replay = await replayed_mutation(session, account.tenant_id, idempotency_key, "TICKET_UPDATE", resource_id)
@@ -824,15 +818,7 @@ async def update_ticket(ticket_id: str, payload: TicketUpdate, request: Request,
     if idempotency_key:
         session.add(ClientMutation(tenant_id=account.tenant_id, idempotency_key=idempotency_key, action="TICKET_UPDATE", resource_id=resource_id, response_json=response.model_dump_json()))
     await session.commit()
-    await triage_manager.broadcast(
-        tenant_id,
-        {
-            "type": "ticket.updated",
-            "tenant_id": tenant_id,
-            "payload": response.model_dump(),
-            "priority": "NORMAL",
-        },
-    )
+    await broadcast_ticket_event(ticket, "ticket.updated", response.model_dump())
     return response
 
 @router.get("/appointments/slots", response_model=list[SlotResponse])
@@ -884,31 +870,34 @@ async def appointment_response(session: AsyncSession, appointment: Appointment) 
 
 @router.post("/appointments", response_model=AppointmentResponse, status_code=201)
 async def book_appointment(payload: AppointmentCreate, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
-    tenant_id = uuid.UUID(public_tenant_id())
-    await apply_tenant_context(session, tenant_id)
-    ticket = await session.scalar(select(Ticket).where(Ticket.id == payload.ticket_id, Ticket.tenant_id == tenant_id))
-    if not ticket or ticket.customer_phone != payload.customer_phone:
+    requester = await account_for_access_token(session, request.cookies.get(ACCESS_COOKIE)) if request.cookies.get(ACCESS_COOKIE) else None
+    owner_tenant_id = requester.tenant_id if requester and requester.role == "patient" else uuid.UUID(public_tenant_id())
+    await apply_tenant_context(session, owner_tenant_id)
+    ticket = await session.scalar(select(Ticket).where(Ticket.id == payload.ticket_id, Ticket.customer_phone == payload.customer_phone))
+    if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found for this phone")
+    destination_tenant_id = ticket_destination_id(ticket)
     existing = await session.scalar(select(Appointment).where(Appointment.ticket_id == ticket.id, Appointment.status == "BOOKED"))
     if existing:
         raise HTTPException(status_code=409, detail="Ticket already has an appointment")
+    await apply_tenant_context(session, destination_tenant_id)
     slot = await session.scalar(
-        select(ProviderSlot).where(ProviderSlot.id == payload.slot_id, ProviderSlot.tenant_id == tenant_id).with_for_update()
+        select(ProviderSlot).where(ProviderSlot.id == payload.slot_id, ProviderSlot.tenant_id == destination_tenant_id).with_for_update()
     )
     if not slot:
-        raise HTTPException(status_code=404, detail="Appointment slot not found")
+        raise HTTPException(status_code=404, detail="Appointment slot not found at the routed hospital")
     if slot.is_locked or slot.is_booked:
         raise HTTPException(status_code=409, detail="Appointment slot is no longer available")
     slot.is_booked = True
     ticket.appointment_slot = slot.starts_at
-    appointment = Appointment(tenant_id=tenant_id, ticket_id=ticket.id, slot_id=slot.id, customer_phone=payload.customer_phone, status="BOOKED")
+    appointment = Appointment(tenant_id=destination_tenant_id, ticket_id=ticket.id, slot_id=slot.id, customer_phone=payload.customer_phone, status="BOOKED")
     session.add(appointment)
     await session.flush()
-    await write_audit_log(session, AuditAction.APPOINTMENT_BOOKED, actor_id=None, actor_type="PATIENT", tenant_id=str(tenant_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="Appointment", resource_id=str(appointment.id))
+    await write_audit_log(session, AuditAction.APPOINTMENT_BOOKED, actor_id=None, actor_type="PATIENT", tenant_id=str(destination_tenant_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="Appointment", resource_id=str(appointment.id))
     await session.commit()
-    await apply_tenant_context(session, tenant_id)
+    await apply_tenant_context(session, destination_tenant_id)
     response = await appointment_response(session, appointment)
-    await triage_manager.broadcast(str(tenant_id), {"type": "appointment.updated", "tenant_id": str(tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
+    await triage_manager.broadcast(str(destination_tenant_id), {"type": "appointment.updated", "tenant_id": str(destination_tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
     return response
 
 @router.get("/appointments", response_model=list[AppointmentResponse])
@@ -924,8 +913,24 @@ async def patient_appointments(request: Request, session: AsyncSession = Depends
     account = await require_account(request, session)
     if account.role != "patient" or not account.phone:
         raise HTTPException(status_code=403, detail="Patient access required")
-    result = await session.execute(select(Appointment).where(Appointment.tenant_id == account.tenant_id, Appointment.customer_phone == account.phone).order_by(Appointment.created_at.desc()))
-    return [await appointment_response(session, appointment) for appointment in result.scalars().all()]
+    ticket_rows = list((await session.execute(
+        select(Ticket).where(Ticket.customer_phone == account.phone).order_by(Ticket.created_at.desc())
+    )).scalars().all())
+    ticket_ids = [ticket.id for ticket in ticket_rows]
+    if not ticket_ids:
+        return []
+    appointments: list[Appointment] = []
+    destination_ids = {ticket_destination_id(ticket) for ticket in ticket_rows}
+    for destination_id in destination_ids:
+        await apply_tenant_context(session, destination_id)
+        result = await session.execute(
+            select(Appointment)
+            .where(Appointment.customer_phone == account.phone, Appointment.ticket_id.in_(ticket_ids))
+            .order_by(Appointment.created_at.desc())
+        )
+        appointments.extend(result.scalars().all())
+    appointments.sort(key=lambda appointment: appointment.created_at, reverse=True)
+    return [await appointment_response(session, appointment) for appointment in appointments]
 
 @router.patch("/patient/profile", response_model=AuthProfileResponse)
 async def update_patient_profile(payload: PatientProfileUpdate, request: Request, session: AsyncSession = Depends(get_db)) -> AuthProfileResponse:
@@ -961,7 +966,7 @@ async def patient_history(request: Request, session: AsyncSession = Depends(get_
     if account.role != "patient" or not account.phone:
         raise HTTPException(status_code=403, detail="Patient access required")
     tickets = (await session.execute(
-        select(Ticket).where(Ticket.tenant_id == account.tenant_id, Ticket.customer_phone == account.phone).order_by(Ticket.created_at.desc())
+        select(Ticket).where(Ticket.customer_phone == account.phone).order_by(Ticket.created_at.desc())
     )).scalars().all()
     appointment_rows = (await session.execute(
         select(Appointment, ProviderSlot, Provider)
@@ -986,7 +991,7 @@ async def patient_dashboard(request: Request, session: AsyncSession = Depends(ge
     if account.role != "patient" or not account.phone:
         raise HTTPException(status_code=403, detail="Patient access required")
     tickets = (await session.execute(
-        select(Ticket).where(Ticket.tenant_id == account.tenant_id, Ticket.customer_phone == account.phone).order_by(Ticket.created_at.desc())
+        select(Ticket).where(Ticket.customer_phone == account.phone).order_by(Ticket.created_at.desc())
     )).scalars().all()
     next_slot = (await session.execute(
         select(ProviderSlot).join(Appointment, Appointment.slot_id == ProviderSlot.id).where(
@@ -1079,9 +1084,10 @@ async def patient_queue(request: Request, session: AsyncSession = Depends(get_db
     patient_ticket = next((ticket for ticket in active_tickets if ticket.queue_status == "BEING_SEEN"), active_tickets[0] if active_tickets else None)
     if not patient_ticket:
         return None
+    destination_id = ticket_destination_id(patient_ticket)
     ahead_result = await session.execute(
         select(Ticket.id).where(
-            Ticket.tenant_id == patient_ticket.tenant_id,
+            ticket_destination_queue(destination_id),
             Ticket.queue_status == "QUEUED",
             Ticket.created_at < patient_ticket.created_at,
         )
@@ -1101,18 +1107,26 @@ async def patient_triage(request: Request, session: AsyncSession = Depends(get_d
     symptom_text = (payload.get("symptom_description") or "").strip()
     if len(symptom_text) < 3:
         raise HTTPException(status_code=422, detail="Describe the symptoms in a little more detail")
+    patient_latitude, patient_longitude = patient_coordinates_from_payload(payload)
     clinical_route = await request.app.state.knowledge_graph.route(symptom_text)
-    selected_tenant, slot_row = await select_registered_facility_for_patient(session, account, clinical_route)
+    facility_route = await select_nearest_eligible_hospital(session, patient_latitude, patient_longitude, clinical_route)
+    if not facility_route:
+        raise HTTPException(status_code=503, detail="No active registered hospital with coordinates is available for patient intake")
     ticket = await persist_ticket(
         TicketCreate(customer_phone=account.phone or "", raw_intake_text=symptom_text, channel="WEB"),
         request,
         session,
         clinical_route,
-        selected_tenant.id if selected_tenant else None,
+        account.tenant_id,
+        facility_route.tenant.id,
+        patient_latitude,
+        patient_longitude,
+        facility_route.distance_km,
     )
     slot_payload = None
-    if slot_row:
-        slot, provider = slot_row
+    if facility_route.slot and facility_route.provider:
+        slot = facility_route.slot
+        provider = facility_route.provider
         slot_payload = {"slot_id": str(slot.id), "slot_start": slot.starts_at.isoformat(), "slot_end": slot.ends_at.isoformat(), "specialist_name": provider.full_name, "specialty": provider.specialty, "room_label": provider.room_label}
     return {
         "condition_name": clinical_route.condition_id.replace("_", " ").title(),
@@ -1124,7 +1138,7 @@ async def patient_triage(request: Request, session: AsyncSession = Depends(get_d
         "severity_label": severity_for_urgency(clinical_route.derived_urgency).title(),
         "severity_message": severity_message_for_urgency(clinical_route.derived_urgency),
         "messages": [f"I identified: {', '.join(clinical_route.symptom_ids) or 'no exact symptom match'}.", f"Routing source: {clinical_route.source}."],
-        "nearest_clinic": {"clinic_name": selected_tenant.name if selected_tenant else "", "address": selected_tenant.state_location if selected_tenant else "", "distance_km": None, "specialist_name": slot_row[1].full_name if slot_row else None, "match_basis": "Registered facility location match"},
+        "nearest_clinic": {"tenant_id": str(facility_route.tenant.id), "clinic_name": facility_route.tenant.name, "address": facility_route.tenant.state_location, "distance_km": round(facility_route.distance_km, 2), "specialist_name": facility_route.provider.full_name if facility_route.provider else None, "match_basis": facility_route.match_basis},
         "appointment_slot": slot_payload,
         "ticket": {"id": str(ticket.id), "ticket_number": ticket.ticket_number},
     }
@@ -1136,7 +1150,7 @@ async def notifications(request: Request, session: AsyncSession = Depends(get_db
     if account.role == "patient":
         ticket_query = ticket_query.where(Ticket.customer_phone == account.phone)
     else:
-        ticket_query = ticket_query.where(Ticket.tenant_id == account.tenant_id)
+        ticket_query = ticket_query.where(ticket_visible_to_tenant(account.tenant_id))
     tickets = list((await session.execute(ticket_query.order_by(Ticket.created_at.desc()).limit(20))).scalars().all())
     marker_prefix = f"{account.id}:"
     markers = list((await session.execute(select(OperationalRecord).where(OperationalRecord.tenant_id == account.tenant_id, OperationalRecord.entity == "notification", OperationalRecord.resource == "read", OperationalRecord.title.like(f"{marker_prefix}%")))).scalars().all())
@@ -1152,9 +1166,11 @@ async def mark_notification(session: AsyncSession, account: AuthAccount, ticket_
 @router.patch("/notifications/read-all")
 async def mark_all_notifications_read(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, bool]:
     account = await require_account(request, session)
-    ticket_query = select(Ticket.id).where(Ticket.tenant_id == account.tenant_id)
+    ticket_query = select(Ticket.id)
     if account.role == "patient":
         ticket_query = ticket_query.where(Ticket.customer_phone == account.phone)
+    else:
+        ticket_query = ticket_query.where(ticket_visible_to_tenant(account.tenant_id))
     ticket_ids = (await session.execute(ticket_query)).scalars().all()
     for ticket_id in ticket_ids:
         await mark_notification(session, account, str(ticket_id))
@@ -1164,9 +1180,11 @@ async def mark_all_notifications_read(request: Request, session: AsyncSession = 
 @router.patch("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, bool]:
     account = await require_account(request, session)
-    ticket_query = select(Ticket).where(Ticket.id == uuid.UUID(notification_id), Ticket.tenant_id == account.tenant_id)
+    ticket_query = select(Ticket).where(Ticket.id == uuid.UUID(notification_id))
     if account.role == "patient":
         ticket_query = ticket_query.where(Ticket.customer_phone == account.phone)
+    else:
+        ticket_query = ticket_query.where(ticket_visible_to_tenant(account.tenant_id))
     ticket = await session.scalar(ticket_query)
     if not ticket:
         raise HTTPException(status_code=404, detail="Notification not found")
@@ -1194,7 +1212,7 @@ async def specialist_resource(resource: str, request: Request, assigned_only: bo
     if resource not in SPECIALIST_RESOURCES:
         raise HTTPException(status_code=404, detail="Specialist resource not found")
     account = await require_specialist(request, session)
-    ticket_query = select(Ticket).where(Ticket.tenant_id == account.tenant_id)
+    ticket_query = select(Ticket).where(ticket_visible_to_tenant(account.tenant_id))
     if assigned_only:
         ticket_query = ticket_query.where(Ticket.assigned_specialist_id == account.id)
     tickets = list((await session.execute(ticket_query.order_by(Ticket.created_at.desc()))).scalars().all())
@@ -1238,7 +1256,7 @@ async def specialist_resource(resource: str, request: Request, assigned_only: bo
 @router.patch("/specialist/patients/{ticket_id}/assign-self")
 async def assign_specialist_patient(ticket_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:
     account = await require_specialist(request, session)
-    ticket = await session.scalar(select(Ticket).where(Ticket.id == uuid.UUID(ticket_id), Ticket.tenant_id == account.tenant_id).with_for_update())
+    ticket = await session.scalar(select(Ticket).where(Ticket.id == uuid.UUID(ticket_id), ticket_visible_to_tenant(account.tenant_id)).with_for_update())
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found")
     if ticket.assigned_specialist_id not in {None, account.id}:
@@ -1254,14 +1272,14 @@ async def specialist_patient_status(ticket_id: str, request: Request, session: A
     status = payload.get("queue_status")
     if status not in {"QUEUED", "BEING_SEEN", "RESOLVED"}:
         raise HTTPException(status_code=422, detail="Invalid queue status")
-    ticket = await session.scalar(select(Ticket).where(Ticket.id == uuid.UUID(ticket_id), Ticket.tenant_id == account.tenant_id).with_for_update())
+    ticket = await session.scalar(select(Ticket).where(Ticket.id == uuid.UUID(ticket_id), ticket_visible_to_tenant(account.tenant_id)).with_for_update())
     if not ticket or ticket.assigned_specialist_id != account.id:
         raise HTTPException(status_code=404, detail="Assigned ticket not found")
     ticket.queue_status = status
     ticket.version += 1
     await session.commit()
     response = build_ticket_response(ticket)
-    await triage_manager.broadcast(str(account.tenant_id), {"type": "ticket.updated", "tenant_id": str(account.tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
+    await broadcast_ticket_event(ticket, "ticket.updated", response.model_dump())
     return response
 
 @router.patch("/specialist/patients/{ticket_id}/escalate")
@@ -1275,7 +1293,7 @@ async def create_consultation_note(ticket_id: str, request: Request, session: As
     body = str(payload.get("body") or "").strip()
     if len(body) < 3:
         raise HTTPException(status_code=422, detail="Consultation note is required")
-    ticket = await session.scalar(select(Ticket).where(Ticket.id == uuid.UUID(ticket_id), Ticket.tenant_id == account.tenant_id, Ticket.assigned_specialist_id == account.id))
+    ticket = await session.scalar(select(Ticket).where(Ticket.id == uuid.UUID(ticket_id), ticket_visible_to_tenant(account.tenant_id), Ticket.assigned_specialist_id == account.id))
     if not ticket:
         raise HTTPException(status_code=404, detail="Assigned ticket not found")
     note = ConsultationNote(tenant_id=account.tenant_id, ticket_id=ticket.id, specialist_id=account.id, body=body)
@@ -1349,7 +1367,7 @@ async def operational_portal(entity: str, resource: str, request: Request, sessi
     account = await require_roles(request, session, allowed_roles)
     tenant = await session.get(Tenant, account.tenant_id)
     tickets = list((await session.execute(
-        select(Ticket).where(Ticket.tenant_id == account.tenant_id).order_by(Ticket.created_at.desc())
+        select(Ticket).where(ticket_visible_to_tenant(account.tenant_id)).order_by(Ticket.created_at.desc())
     )).scalars().all())
     providers = list((await session.execute(
         select(Provider).where(Provider.tenant_id == account.tenant_id, Provider.is_active.is_(True)).order_by(Provider.full_name)

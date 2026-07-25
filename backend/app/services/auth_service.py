@@ -136,8 +136,14 @@ async def session_for_refresh_token(db: AsyncSession, token: str) -> tuple[AuthA
 async def seed_demo_accounts(db: AsyncSession) -> None:
     tenant_id = UUID("11111111-1111-1111-1111-111111111111")
     if not await db.get(Tenant, tenant_id):
-        db.add(Tenant(id=tenant_id, name="SynaptiVerse Demo Clinic", state_location="Akwa Ibom"))
+        db.add(Tenant(id=tenant_id, name="SynaptiVerse Demo Clinic", state_location="Akwa Ibom", latitude=5.0380, longitude=7.9090, accepts_patients=True))
         await db.flush()
+    else:
+        tenant = await db.get(Tenant, tenant_id)
+        if tenant and (tenant.latitude is None or tenant.longitude is None):
+            tenant.latitude = 5.0380
+            tenant.longitude = 7.9090
+            tenant.accepts_patients = True
     seeds = (
         dict(role="patient", identifier="+2348012345678", first_name="Ada", last_name="Okafor", phone="+2348012345678", card_number="SV-1001"),
         dict(role="specialist", identifier="dr.ada@example.com", first_name="Ada", last_name="Okafor", email="dr.ada@example.com", specialty="General Medicine"),

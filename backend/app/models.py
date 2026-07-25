@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4, UUID
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -18,10 +18,13 @@ class Tenant(Base):
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     state_location: Mapped[str] = mapped_column(String(64), nullable=False)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    accepts_patients: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
-    tickets: Mapped[list["Ticket"]] = relationship(back_populates="tenant")
+    tickets: Mapped[list["Ticket"]] = relationship(back_populates="tenant", foreign_keys="Ticket.tenant_id")
     audit_logs: Mapped[list["AuditLog"]] = relationship(back_populates="tenant")
 
 
@@ -100,10 +103,14 @@ class Ticket(Base):
     is_manually_escalated: Mapped[bool] = mapped_column(Boolean, default=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     appointment_slot: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    patient_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    patient_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    routed_tenant_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=True, index=True)
+    route_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
     assigned_specialist_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
-    tenant: Mapped[Tenant] = relationship(back_populates="tickets")
+    tenant: Mapped[Tenant] = relationship(back_populates="tickets", foreign_keys=[tenant_id])
 
 
 class AuditLog(Base):

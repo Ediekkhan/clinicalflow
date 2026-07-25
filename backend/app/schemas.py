@@ -176,6 +176,10 @@ class TicketResponse(BaseModel):
     queue_status: QueueStatus
     is_manually_escalated: bool
     appointment_slot: datetime | None = None
+    patient_latitude: float | None = None
+    patient_longitude: float | None = None
+    routed_tenant_id: UUID | None = None
+    route_distance_km: float | None = None
     created_at: datetime
     raw_intake_text: str | None = None
     extracted_symptoms: str | None = None

@@ -29,10 +29,12 @@ def test_initial_migration_builds_clean_sqlite_schema(tmp_path: Path) -> None:
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
 
     assert {"tenants", "staff", "auth_accounts", "auth_sessions", "tickets", "audit_logs", "demo_requests", "providers", "provider_slots", "appointments", "client_mutations"} <= tables
-    assert revision == ("20260716_0010",)
+    assert revision == ("20260716_0011",)
     with sqlite3.connect(database) as connection:
         ticket_columns = {row[1] for row in connection.execute("PRAGMA table_info(tickets)")}
-    assert {"raw_intake_text", "extracted_symptoms"} <= ticket_columns
+        tenant_columns = {row[1] for row in connection.execute("PRAGMA table_info(tenants)")}
+    assert {"raw_intake_text", "extracted_symptoms", "patient_latitude", "patient_longitude", "routed_tenant_id", "route_distance_km"} <= ticket_columns
+    assert {"latitude", "longitude", "accepts_patients"} <= tenant_columns
 
 
 def test_postgresql_offline_migration_contains_rls_policies() -> None:
@@ -55,5 +57,7 @@ def test_postgresql_offline_migration_contains_rls_policies() -> None:
     for table in ("consultation_notes", "specialist_messages"):
         assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in sql
     assert "ALTER TABLE operational_records ENABLE ROW LEVEL SECURITY" in sql
-    assert sql.count("CREATE POLICY tenant_isolation_policy") == 13
+    assert sql.count("CREATE POLICY tenant_isolation_policy") == 14
     assert "WITH CHECK" in sql
+    assert 'DROP POLICY IF EXISTS tenant_isolation_policy ON "tickets"' in sql
+    assert "OR routed_tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid" in sql

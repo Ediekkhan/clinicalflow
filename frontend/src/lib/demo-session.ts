@@ -147,7 +147,9 @@ function entityPayload(role: DemoRole) {
 }
 
 function demoTriageResponse(body?: object) {
-  const symptomText = String((body as { symptom_description?: string } | undefined)?.symptom_description ?? '').toLowerCase();
+  const triageBody = body as { symptom_description?: string; latitude?: number; longitude?: number } | undefined;
+  const hasCoordinates = typeof triageBody?.latitude === 'number' && typeof triageBody?.longitude === 'number';
+  const symptomText = String(triageBody?.symptom_description ?? '').toLowerCase();
   const critical = symptomText.includes('chest') || symptomText.includes('breath') || symptomText.includes('bleeding');
   const routine = symptomText.includes('rash') || symptomText.includes('itch');
   const urgency = critical ? 'CRITICAL' : routine ? 'ROUTINE' : 'URGENT';
@@ -167,9 +169,9 @@ function demoTriageResponse(body?: object) {
     severity_label: severity.charAt(0) + severity.slice(1).toLowerCase(),
     severity_message: critical ? 'Severe presentation. Seek emergency care immediately.' : routine ? 'Mild presentation. Book routine care unless symptoms worsen.' : 'Moderate presentation. A clinician should review this today.',
     messages: ['I identified the symptom pattern from your description.', 'Routing source: frontend demo mode.'],
-    nearest_clinic: { clinic_name: 'Demo Facility', address: 'Registered facility location', distance_km: null, specialist_name: '', match_basis: 'Registered facility location match' },
+    nearest_clinic: hasCoordinates ? { clinic_name: 'Registered demo hospital', address: 'Coordinate-based demo route', distance_km: 1.2, specialist_name: '', match_basis: 'Nearest active registered hospital by patient coordinates' } : undefined,
     appointment_slot: null,
-    ticket: { id: `demo-ticket-${Date.now()}`, ticket_number: 'Demo ticket' },
+    ticket: hasCoordinates ? { id: `demo-ticket-${Date.now()}`, ticket_number: 'Demo ticket' } : undefined,
   };
 }
 export function getDemoApiResponse(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object) {
