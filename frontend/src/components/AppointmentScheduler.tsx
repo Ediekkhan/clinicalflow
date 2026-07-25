@@ -40,14 +40,18 @@ export function AppointmentScheduler() {
     void loadSchedule();
   }, []);
   const grouped = useMemo(() => {
-    const providers = Array.from(new Set(slots.map((slot) => slot.provider_name).filter(Boolean)));
+    const safeSlots = Array.isArray(slots) ? slots : [];
+    const providers = Array.from(new Set(safeSlots.map((slot) => slot.provider_name).filter(Boolean)));
     return providers.map((provider) => ({
       provider,
-      slots: slots.filter((slot) => slot.provider_name === provider),
+      slots: safeSlots.filter((slot) => slot.provider_name === provider),
     }));
   }, [slots]);
 
-  const appointmentBySlot = useMemo(() => new Map(appointments.filter((item) => item.status === 'BOOKED').map((item) => [item.slot_id, item])), [appointments]);
+  const appointmentBySlot = useMemo(() => {
+    const safeAppointments = Array.isArray(appointments) ? appointments : [];
+    return new Map(safeAppointments.filter((item) => item.status === 'BOOKED').map((item) => [item.slot_id, item]));
+  }, [appointments]);
 
   async function toggleLock(slot: ProviderSlot) {
     setSlots((current) =>
@@ -72,8 +76,10 @@ export function AppointmentScheduler() {
 
   async function moveDragged(targetSlotId: string) {
     if (!draggedAppointment) return;
-    const appointment = appointments.find((item) => item.id === draggedAppointment);
-    const target = slots.find((slot) => slot.id === targetSlotId);
+    const safeAppointments = Array.isArray(appointments) ? appointments : [];
+    const safeSlots = Array.isArray(slots) ? slots : [];
+    const appointment = safeAppointments.find((item) => item.id === draggedAppointment);
+    const target = safeSlots.find((slot) => slot.id === targetSlotId);
     if (!appointment || !target || target.is_locked || target.is_booked || appointment.slot_id === targetSlotId) return;
     const previousSlotId = appointment.slot_id;
     setSlots((current) => {

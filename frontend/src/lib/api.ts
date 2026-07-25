@@ -1,6 +1,25 @@
 import type { Appointment, HospitalDepartment, HospitalPatient, HospitalSpecialist, ProviderSlot, Ticket } from '@/lib/types';
 
+export type ListResponse<T> = {
+  items?: T[];
+  results?: T[];
+  data?: T[];
+};
+
+export function normalizeList<T>(response: unknown): T[] {
+  if (Array.isArray(response)) return response;
+  if (response && typeof response === 'object') {
+    const value = response as ListResponse<T>;
+    if (Array.isArray(value.items)) return value.items;
+    if (Array.isArray(value.results)) return value.results;
+    if (Array.isArray(value.data)) return value.data;
+  }
+  return [];
+}
+
 const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
+let refreshPromise: Promise<boolean> | null = null;
+let redirectingToLogin = false;
 
 function getApiBase() {
   if (typeof window === 'undefined') return CONFIGURED_API_BASE;
@@ -26,6 +45,11 @@ function loginDestination() {
   if (path.startsWith('/hospital')) return '/hospital/login';
   if (path.startsWith('/specialist')) return '/specialist/login';
   if (path.startsWith('/nurse')) return '/auth/login';
+  if (path.startsWith('/clinic')) return '/auth/login';
+  if (path.startsWith('/hmo')) return '/auth/login';
+  if (path.startsWith('/lab')) return '/auth/login';
+  if (path.startsWith('/pharmacy')) return '/auth/login';
+  if (path.startsWith('/moh')) return '/auth/login';
   if (path.startsWith('/dashboard')) return '/login';
   return '/login';
 }
@@ -36,27 +60,35 @@ function clearRoleCookie() {
 }
 
 function redirectToLogin(reason = 'session-expired') {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' || redirectingToLogin) return;
+  redirectingToLogin = true;
   clearRoleCookie();
   const next = `${window.location.pathname}${window.location.search}`;
-  const destination = `${loginDestination()}?next=${encodeURIComponent(next)}&reason=${encodeURIComponent(reason)}`;
-  window.location.assign(destination);
+  const params = new URLSearchParams({ next, reason });
+  window.location.assign(`${loginDestination()}?${params.toString()}`);
 }
-
 export class ApiError extends Error {
   constructor(public status: number, message: string, public detail?: unknown) {
     super(message);
   }
 }
 
-async function refreshSession() {
-  return fetch(`${getApiBase()}/api/v1/auth/refresh`, {
-    method: 'POST',
-    credentials: 'include',
-    cache: 'no-store',
-  });
-}
+async function refreshSessionOnce() {
+  if (!refreshPromise) {
+    refreshPromise = fetch(`${getApiBase()}/api/v1/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
 
+  return refreshPromise;
+}
 export async function requestJson<T>(url: string, init: RequestInit = {}, retry = true): Promise<T> {
   const headers = {
     ...(init.body ? { 'Content-Type': 'application/json' } : {}),
@@ -71,8 +103,8 @@ export async function requestJson<T>(url: string, init: RequestInit = {}, retry 
   });
 
   if (response.status === 401 && retry && !isAuthRequest) {
-    const refreshed = await refreshSession();
-    if (refreshed.ok) return requestJson<T>(url, init, false);
+    const refreshed = await refreshSessionOnce();
+    if (refreshed) return requestJson<T>(url, init, false);
     redirectToLogin('session-expired');
     throw new ApiError(401, 'Authentication required');
   }
@@ -124,7 +156,8 @@ export async function listOpenSlots(): Promise<ProviderSlot[]> {
 }
 
 export async function listHospitalSlots(): Promise<ProviderSlot[]> {
-  return requestJson('/api/v1/hospital/appointment-slots');
+  const response = await requestJson<ProviderSlot[] | ListResponse<ProviderSlot>>('/api/v1/hospital/appointment-slots');
+  return normalizeList<ProviderSlot>(response);
 }
 
 export async function lockSlot(slotId: string, isLocked: boolean, reason?: string) {
@@ -140,7 +173,8 @@ export async function listAppointments(): Promise<Appointment[]> {
 }
 
 export async function listHospitalAppointments(): Promise<Appointment[]> {
-  return requestJson('/api/v1/hospital/appointments');
+  const response = await requestJson<Appointment[] | ListResponse<Appointment>>('/api/v1/hospital/appointments');
+  return normalizeList<Appointment>(response);
 }
 
 export async function listHospitalPatients(): Promise<{ identity?: Record<string, unknown>; items: HospitalPatient[] }> {
