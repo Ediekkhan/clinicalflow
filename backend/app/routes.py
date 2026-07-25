@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Any
 
 from collections import defaultdict
@@ -12,7 +12,7 @@ from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Appointment, AuthAccount, AuthSession, AuditLog, ClientMutation, ConsultationNote, DemoRequest, OperationalRecord, Provider, ProviderSlot, SpecialistMessage, Ticket, Tenant
+from app.models import Appointment, AuthAccount, AuthSession, AuditLog, ClientMutation, ConsultationNote, DemoRequest, HospitalDoctorMembership, Notification, OperationalRecord, Provider, ProviderSlot, SpecialistMessage, Ticket, Tenant
 from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
 from app.services.audit_service import AuditAction, write_audit_log
 from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, session_for_refresh_token, utc_now, verify_password
@@ -161,6 +161,40 @@ async def broadcast_ticket_event(ticket: Ticket, event_type: str, payload: dict[
             {"type": event_type, "tenant_id": tenant_id, "payload": payload, "priority": priority},
         )
 
+
+async def create_appointment_notification(
+    session: AsyncSession,
+    *,
+    tenant_id: uuid.UUID,
+    recipient_account_id: uuid.UUID | None,
+    recipient_role: str,
+    appointment: Appointment | None,
+    ticket: Ticket,
+    event_type: str,
+    title: str,
+    body: str,
+    payload: dict[str, Any],
+) -> Notification:
+    notification = Notification(
+        tenant_id=tenant_id,
+        recipient_account_id=recipient_account_id,
+        recipient_role=recipient_role,
+        appointment_id=appointment.id if appointment else None,
+        ticket_id=ticket.id,
+        event_type=event_type,
+        title=title,
+        body=body,
+        payload_json=json.dumps(payload, default=str),
+    )
+    session.add(notification)
+    return notification
+
+
+async def broadcast_appointment_event(tenant_id: uuid.UUID, event_type: str, payload: dict[str, Any], recipient_account_id: uuid.UUID | None = None) -> None:
+    await triage_manager.broadcast(
+        str(tenant_id),
+        {"type": event_type, "tenant_id": str(tenant_id), "recipient_account_id": str(recipient_account_id) if recipient_account_id else None, "payload": payload, "priority": "NORMAL"},
+    )
 async def enforce_rate_limit(request: Request, scope: str, limit: int, identity: str | None = None) -> None:
     client_identity = identity or (request.client.host if request.client else "unknown")
     if not await request.app.state.redis.allow(scope, client_identity, limit):
@@ -536,6 +570,7 @@ async def channel_intake(
                 ProviderSlot.is_locked.is_(False),
                 ProviderSlot.is_booked.is_(False),
                 Provider.is_active.is_(True),
+                Provider.specialty == active_ticket.assigned_specialty,
             )
             .order_by(ProviderSlot.starts_at.asc())
             .limit(5)
@@ -862,52 +897,199 @@ async def appointment_response(session: AsyncSession, appointment: Appointment) 
         select(ProviderSlot, Provider).join(Provider, Provider.id == ProviderSlot.provider_id).where(ProviderSlot.id == appointment.slot_id)
     )).one()
     return AppointmentResponse(
-        id=appointment.id, tenant_id=appointment.tenant_id, ticket_id=appointment.ticket_id,
-        slot_id=appointment.slot_id, customer_phone=appointment.customer_phone, status=appointment.status,
-        provider_name=provider.full_name, specialty=provider.specialty, room_label=provider.room_label,
-        starts_at=slot.starts_at, ends_at=slot.ends_at,
+        id=appointment.id,
+        tenant_id=appointment.tenant_id,
+        hospital_id=appointment.hospital_id,
+        ticket_id=appointment.ticket_id,
+        doctor_id=appointment.doctor_id,
+        specialty_id=appointment.specialty_id,
+        slot_id=appointment.slot_id,
+        customer_phone=appointment.customer_phone,
+        urgency=appointment.urgency,
+        status=appointment.status,
+        provider_name=provider.full_name,
+        specialty=provider.specialty,
+        room_label=provider.room_label,
+        starts_at=appointment.starts_at or slot.starts_at,
+        ends_at=appointment.ends_at or slot.ends_at,
     )
-
 @router.post("/appointments", response_model=AppointmentResponse, status_code=201)
 async def book_appointment(payload: AppointmentCreate, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
     requester = await account_for_access_token(session, request.cookies.get(ACCESS_COOKIE)) if request.cookies.get(ACCESS_COOKIE) else None
     owner_tenant_id = requester.tenant_id if requester and requester.role == "patient" else uuid.UUID(public_tenant_id())
     await apply_tenant_context(session, owner_tenant_id)
-    ticket = await session.scalar(select(Ticket).where(Ticket.id == payload.ticket_id, Ticket.customer_phone == payload.customer_phone))
+    ticket = await session.scalar(select(Ticket).where(Ticket.id == payload.ticket_id, Ticket.customer_phone == payload.customer_phone).with_for_update())
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket not found for this phone")
     destination_tenant_id = ticket_destination_id(ticket)
+    specialty_id = ticket.assigned_specialty
+    if not specialty_id:
+        raise HTTPException(status_code=409, detail="Ticket has no triage specialty for doctor assignment")
     existing = await session.scalar(select(Appointment).where(Appointment.ticket_id == ticket.id, Appointment.status == "BOOKED"))
     if existing:
         raise HTTPException(status_code=409, detail="Ticket already has an appointment")
+
     await apply_tenant_context(session, destination_tenant_id)
-    slot = await session.scalar(
-        select(ProviderSlot).where(ProviderSlot.id == payload.slot_id, ProviderSlot.tenant_id == destination_tenant_id).with_for_update()
+    row = (await session.execute(
+        select(ProviderSlot, Provider, AuthAccount, HospitalDoctorMembership)
+        .join(Provider, Provider.id == ProviderSlot.provider_id)
+        .join(AuthAccount, AuthAccount.id == Provider.doctor_id)
+        .join(
+            HospitalDoctorMembership,
+            (HospitalDoctorMembership.hospital_id == ProviderSlot.tenant_id)
+            & (HospitalDoctorMembership.doctor_id == AuthAccount.id)
+            & (HospitalDoctorMembership.specialty_id == Provider.specialty),
+        )
+        .where(
+            ProviderSlot.id == payload.slot_id,
+            ProviderSlot.tenant_id == destination_tenant_id,
+            ProviderSlot.is_locked.is_(False),
+            ProviderSlot.is_booked.is_(False),
+            Provider.is_active.is_(True),
+            Provider.specialty == specialty_id,
+            AuthAccount.is_active.is_(True),
+            AuthAccount.role.in_(["doctor", "specialist"]),
+            HospitalDoctorMembership.is_active.is_(True),
+            HospitalDoctorMembership.verification_status == "VERIFIED",
+            HospitalDoctorMembership.employment_status == "ACTIVE",
+            HospitalDoctorMembership.active_from <= ProviderSlot.starts_at,
+            or_(HospitalDoctorMembership.active_until.is_(None), HospitalDoctorMembership.active_until >= ProviderSlot.starts_at),
+        )
+        .order_by(ProviderSlot.starts_at.asc(), Provider.full_name.asc())
+        .with_for_update()
+    )).first()
+
+    if not row:
+        ticket.queue_status = "AWAITING_CLINICAL_REVIEW"
+        eligible_doctors = list((await session.execute(
+            select(AuthAccount)
+            .join(HospitalDoctorMembership, HospitalDoctorMembership.doctor_id == AuthAccount.id)
+            .where(
+                HospitalDoctorMembership.hospital_id == destination_tenant_id,
+                HospitalDoctorMembership.specialty_id == specialty_id,
+                HospitalDoctorMembership.is_active.is_(True),
+                HospitalDoctorMembership.verification_status == "VERIFIED",
+                HospitalDoctorMembership.employment_status == "ACTIVE",
+                AuthAccount.is_active.is_(True),
+            )
+        )).scalars().all())
+        recipients = eligible_doctors or [None]
+        for recipient in recipients:
+            await create_appointment_notification(
+                session,
+                tenant_id=destination_tenant_id,
+                recipient_account_id=recipient.id if recipient else None,
+                recipient_role="doctor" if recipient else "department_coordinator",
+                appointment=None,
+                ticket=ticket,
+                event_type="appointment.reassignment_requested",
+                title="Specialist review needed",
+                body="No eligible verified doctor was available for the requested routed appointment slot.",
+                payload={"ticket_id": str(ticket.id), "specialty_id": specialty_id, "hospital_id": str(destination_tenant_id)},
+            )
+        await session.commit()
+        await broadcast_appointment_event(destination_tenant_id, "appointment.reassignment_requested", {"ticket_id": str(ticket.id), "specialty_id": specialty_id})
+        raise HTTPException(status_code=409, detail="No eligible verified doctor is available at the routed hospital for this specialty and slot")
+
+    slot, provider, doctor, membership = row
+    day_start = datetime.combine(slot.starts_at.date(), time.min, tzinfo=slot.starts_at.tzinfo or UTC)
+    day_end = day_start + timedelta(days=1)
+    booked_count = await session.scalar(
+        select(func.count(Appointment.id)).where(
+            Appointment.hospital_id == destination_tenant_id,
+            Appointment.doctor_id == doctor.id,
+            Appointment.status == "BOOKED",
+            Appointment.starts_at >= day_start,
+            Appointment.starts_at < day_end,
+        )
     )
-    if not slot:
-        raise HTTPException(status_code=404, detail="Appointment slot not found at the routed hospital")
-    if slot.is_locked or slot.is_booked:
-        raise HTTPException(status_code=409, detail="Appointment slot is no longer available")
+    if (booked_count or 0) >= provider.max_daily_capacity:
+        ticket.queue_status = "AWAITING_CLINICAL_REVIEW"
+        await create_appointment_notification(
+            session,
+            tenant_id=destination_tenant_id,
+            recipient_account_id=None,
+            recipient_role="department_coordinator",
+            appointment=None,
+            ticket=ticket,
+            event_type="appointment.reassignment_requested",
+            title="Doctor capacity reached",
+            body="The eligible doctor for this routed appointment has reached capacity.",
+            payload={"ticket_id": str(ticket.id), "doctor_id": str(doctor.id), "specialty_id": specialty_id},
+        )
+        await session.commit()
+        await broadcast_appointment_event(destination_tenant_id, "appointment.reassignment_requested", {"ticket_id": str(ticket.id), "doctor_id": str(doctor.id), "specialty_id": specialty_id})
+        raise HTTPException(status_code=409, detail="Eligible doctor capacity has been reached at the routed hospital")
+
     slot.is_booked = True
     ticket.appointment_slot = slot.starts_at
-    appointment = Appointment(tenant_id=destination_tenant_id, ticket_id=ticket.id, slot_id=slot.id, customer_phone=payload.customer_phone, status="BOOKED")
+    appointment = Appointment(
+        tenant_id=destination_tenant_id,
+        hospital_id=destination_tenant_id,
+        ticket_id=ticket.id,
+        doctor_id=doctor.id,
+        specialty_id=membership.specialty_id,
+        slot_id=slot.id,
+        customer_phone=payload.customer_phone,
+        urgency=ticket.urgency_level,
+        starts_at=slot.starts_at,
+        ends_at=slot.ends_at,
+        status="BOOKED",
+    )
     session.add(appointment)
     await session.flush()
+    response_payload = {
+        "appointment_id": str(appointment.id),
+        "ticket_id": str(ticket.id),
+        "patient_phone": ticket.customer_phone,
+        "starts_at": slot.starts_at.isoformat(),
+        "ends_at": slot.ends_at.isoformat(),
+        "hospital_id": str(destination_tenant_id),
+        "doctor_id": str(doctor.id),
+        "specialty_id": membership.specialty_id,
+        "urgency": ticket.urgency_level,
+        "room_label": provider.room_label,
+        "actions": ["view", "accept", "request_reassignment"],
+    }
+    await create_appointment_notification(
+        session,
+        tenant_id=destination_tenant_id,
+        recipient_account_id=doctor.id,
+        recipient_role="doctor",
+        appointment=appointment,
+        ticket=ticket,
+        event_type="appointment.assigned",
+        title="New appointment assigned",
+        body=f"{membership.specialty_id} appointment at {provider.room_label}",
+        payload=response_payload,
+    )
+    await create_appointment_notification(
+        session,
+        tenant_id=ticket.tenant_id,
+        recipient_account_id=requester.id if requester and requester.role == "patient" else None,
+        recipient_role="patient",
+        appointment=appointment,
+        ticket=ticket,
+        event_type="appointment.created",
+        title="Appointment confirmed",
+        body="Your appointment has been confirmed at the routed hospital.",
+        payload=response_payload,
+    )
     await write_audit_log(session, AuditAction.APPOINTMENT_BOOKED, actor_id=None, actor_type="PATIENT", tenant_id=str(destination_tenant_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="Appointment", resource_id=str(appointment.id))
     await session.commit()
     await apply_tenant_context(session, destination_tenant_id)
     response = await appointment_response(session, appointment)
-    await triage_manager.broadcast(str(destination_tenant_id), {"type": "appointment.updated", "tenant_id": str(destination_tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
+    await broadcast_appointment_event(destination_tenant_id, "appointment.assigned", response_payload, doctor.id)
+    await broadcast_appointment_event(ticket.tenant_id, "appointment.created", response_payload, requester.id if requester and requester.role == "patient" else None)
     return response
-
 @router.get("/appointments", response_model=list[AppointmentResponse])
 async def staff_appointments(request: Request, session: AsyncSession = Depends(get_db)) -> list[AppointmentResponse]:
     account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "admin"})
-    result = await session.execute(
-        select(Appointment).where(Appointment.tenant_id == account.tenant_id, Appointment.status == "BOOKED").order_by(Appointment.created_at.asc())
-    )
+    query = select(Appointment).where(Appointment.hospital_id == account.tenant_id, Appointment.status == "BOOKED")
+    if account.role in {"doctor", "specialist"}:
+        query = query.where(Appointment.doctor_id == account.id)
+    result = await session.execute(query.order_by(Appointment.created_at.asc()))
     return [await appointment_response(session, appointment) for appointment in result.scalars().all()]
-
 @router.get("/patient/appointments", response_model=list[AppointmentResponse])
 async def patient_appointments(request: Request, session: AsyncSession = Depends(get_db)) -> list[AppointmentResponse]:
     account = await require_account(request, session)
@@ -1015,10 +1197,15 @@ async def patient_dashboard(request: Request, session: AsyncSession = Depends(ge
 @router.patch("/appointments/{appointment_id}/cancel", response_model=AppointmentResponse)
 async def cancel_appointment(appointment_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
     account = await require_account(request, session)
-    appointment = await session.scalar(select(Appointment).where(Appointment.id == uuid.UUID(appointment_id), Appointment.tenant_id == account.tenant_id).with_for_update())
+    appointment_query = select(Appointment).where(Appointment.id == uuid.UUID(appointment_id))
+    if account.role == "patient":
+        appointment_query = appointment_query.where(Appointment.customer_phone == account.phone)
+    else:
+        appointment_query = appointment_query.where(Appointment.hospital_id == account.tenant_id)
+        if account.role in {"doctor", "specialist"}:
+            appointment_query = appointment_query.where(Appointment.doctor_id == account.id)
+    appointment = await session.scalar(appointment_query.with_for_update())
     if not appointment:
-        raise HTTPException(status_code=404, detail="Appointment not found")
-    if account.role == "patient" and appointment.customer_phone != account.phone:
         raise HTTPException(status_code=404, detail="Appointment not found")
     if appointment.status != "BOOKED":
         raise HTTPException(status_code=409, detail="Appointment is not active")
@@ -1030,43 +1217,93 @@ async def cancel_appointment(appointment_id: str, request: Request, session: Asy
     ticket = await session.get(Ticket, appointment.ticket_id)
     if ticket:
         ticket.appointment_slot = None
-    await write_audit_log(session, AuditAction.APPOINTMENT_CANCELLED, actor_id=str(account.id), actor_type=account.role.upper(), tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="Appointment", resource_id=str(appointment.id))
+        await create_appointment_notification(session, tenant_id=appointment.hospital_id, recipient_account_id=appointment.doctor_id, recipient_role="doctor", appointment=appointment, ticket=ticket, event_type="appointment.cancelled", title="Appointment cancelled", body="An assigned appointment was cancelled.", payload={"appointment_id": str(appointment.id), "ticket_id": str(ticket.id)})
+    await write_audit_log(session, AuditAction.APPOINTMENT_CANCELLED, actor_id=str(account.id), actor_type=account.role.upper(), tenant_id=str(appointment.hospital_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="Appointment", resource_id=str(appointment.id))
     await session.commit()
-    await apply_tenant_context(session, account.tenant_id)
+    await apply_tenant_context(session, appointment.hospital_id)
     response = await appointment_response(session, appointment)
-    await triage_manager.broadcast(str(account.tenant_id), {"type": "appointment.updated", "tenant_id": str(account.tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
+    await broadcast_appointment_event(appointment.hospital_id, "appointment.cancelled", response.model_dump(), appointment.doctor_id)
     return response
 
 @router.patch("/appointments/{appointment_id}/reschedule", response_model=AppointmentResponse)
 async def reschedule_appointment(appointment_id: str, payload: AppointmentMoveRequest, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
     account = await require_account(request, session)
-    appointment = await session.scalar(select(Appointment).where(Appointment.id == uuid.UUID(appointment_id), Appointment.tenant_id == account.tenant_id).with_for_update())
-    if not appointment or (account.role == "patient" and appointment.customer_phone != account.phone):
+    appointment_query = select(Appointment).where(Appointment.id == uuid.UUID(appointment_id))
+    if account.role == "patient":
+        appointment_query = appointment_query.where(Appointment.customer_phone == account.phone)
+    else:
+        appointment_query = appointment_query.where(Appointment.hospital_id == account.tenant_id)
+        if account.role in {"doctor", "specialist"}:
+            appointment_query = appointment_query.where(Appointment.doctor_id == account.id)
+    appointment = await session.scalar(appointment_query.with_for_update())
+    if not appointment:
         raise HTTPException(status_code=404, detail="Appointment not found")
     if appointment.status != "BOOKED":
         raise HTTPException(status_code=409, detail="Appointment is not active")
     slots = (await session.execute(select(ProviderSlot).where(ProviderSlot.id.in_([appointment.slot_id, payload.slot_id])).with_for_update())).scalars().all()
     slot_map = {slot.id: slot for slot in slots}
     old_slot, new_slot = slot_map.get(appointment.slot_id), slot_map.get(payload.slot_id)
-    if not new_slot or new_slot.tenant_id != account.tenant_id:
+    if not new_slot or new_slot.tenant_id != appointment.hospital_id:
         raise HTTPException(status_code=404, detail="New slot not found")
+    provider = await session.scalar(select(Provider).where(Provider.id == new_slot.provider_id))
+    if not provider or provider.doctor_id != appointment.doctor_id or provider.specialty != appointment.specialty_id:
+        raise HTTPException(status_code=409, detail="New slot does not match the assigned doctor and specialty")
     if new_slot.is_locked or new_slot.is_booked:
         raise HTTPException(status_code=409, detail="New slot is no longer available")
     if old_slot:
         old_slot.is_booked = False
     new_slot.is_booked = True
     appointment.slot_id = new_slot.id
+    appointment.starts_at = new_slot.starts_at
+    appointment.ends_at = new_slot.ends_at
     appointment.updated_at = utc_now()
     ticket = await session.get(Ticket, appointment.ticket_id)
     if ticket:
         ticket.appointment_slot = new_slot.starts_at
-    await write_audit_log(session, AuditAction.APPOINTMENT_RESCHEDULED, actor_id=str(account.id), actor_type=account.role.upper(), tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="Appointment", resource_id=str(appointment.id), metadata={"new_slot_id": str(new_slot.id)})
+        await create_appointment_notification(session, tenant_id=appointment.hospital_id, recipient_account_id=appointment.doctor_id, recipient_role="doctor", appointment=appointment, ticket=ticket, event_type="appointment.rescheduled", title="Appointment rescheduled", body="An assigned appointment was rescheduled.", payload={"appointment_id": str(appointment.id), "ticket_id": str(ticket.id), "starts_at": new_slot.starts_at.isoformat()})
+    await write_audit_log(session, AuditAction.APPOINTMENT_RESCHEDULED, actor_id=str(account.id), actor_type=account.role.upper(), tenant_id=str(appointment.hospital_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="Appointment", resource_id=str(appointment.id), metadata={"new_slot_id": str(new_slot.id)})
     await session.commit()
-    await apply_tenant_context(session, account.tenant_id)
+    await apply_tenant_context(session, appointment.hospital_id)
     response = await appointment_response(session, appointment)
-    await triage_manager.broadcast(str(account.tenant_id), {"type": "appointment.updated", "tenant_id": str(account.tenant_id), "payload": response.model_dump(), "priority": "NORMAL"})
+    await broadcast_appointment_event(appointment.hospital_id, "appointment.rescheduled", response.model_dump(), appointment.doctor_id)
     return response
-
+@router.post("/appointments/{appointment_id}/accept", response_model=AppointmentResponse)
+async def accept_unassigned_appointment(appointment_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
+    account = await require_roles(request, session, {"doctor", "specialist"})
+    appointment = await session.scalar(select(Appointment).where(Appointment.id == uuid.UUID(appointment_id), Appointment.hospital_id == account.tenant_id).with_for_update())
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if appointment.doctor_id is not None:
+        raise HTTPException(status_code=409, detail="Appointment has already been accepted")
+    if appointment.status not in {"AWAITING_CLINICAL_REVIEW", "SPECIALIST_UNAVAILABLE"}:
+        raise HTTPException(status_code=409, detail="Appointment is not awaiting doctor acceptance")
+    slot, provider = (await session.execute(
+        select(ProviderSlot, Provider)
+        .join(Provider, Provider.id == ProviderSlot.provider_id)
+        .where(ProviderSlot.id == appointment.slot_id, ProviderSlot.tenant_id == appointment.hospital_id)
+        .with_for_update()
+    )).one()
+    membership = await session.scalar(select(HospitalDoctorMembership).where(
+        HospitalDoctorMembership.hospital_id == appointment.hospital_id,
+        HospitalDoctorMembership.doctor_id == account.id,
+        HospitalDoctorMembership.specialty_id == appointment.specialty_id,
+        HospitalDoctorMembership.is_active.is_(True),
+        HospitalDoctorMembership.verification_status == "VERIFIED",
+        HospitalDoctorMembership.employment_status == "ACTIVE",
+    ))
+    if not membership or not account.is_active or provider.specialty != appointment.specialty_id or slot.is_locked or slot.is_booked:
+        raise HTTPException(status_code=403, detail="Doctor is not eligible to accept this appointment")
+    appointment.doctor_id = account.id
+    appointment.status = "BOOKED"
+    slot.is_booked = True
+    ticket = await session.get(Ticket, appointment.ticket_id)
+    if ticket:
+        ticket.appointment_slot = appointment.starts_at or slot.starts_at
+        await create_appointment_notification(session, tenant_id=appointment.hospital_id, recipient_account_id=account.id, recipient_role="doctor", appointment=appointment, ticket=ticket, event_type="appointment.assigned", title="Appointment accepted", body="You accepted this appointment.", payload={"appointment_id": str(appointment.id), "ticket_id": str(ticket.id)})
+    await session.commit()
+    response = await appointment_response(session, appointment)
+    await broadcast_appointment_event(appointment.hospital_id, "appointment.assigned", response.model_dump(), account.id)
+    return response
 @router.get("/patient/queue")
 async def patient_queue(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any] | None:
     account = await require_account(request, session)
@@ -1146,6 +1383,30 @@ async def patient_triage(request: Request, session: AsyncSession = Depends(get_d
 @router.get("/notifications")
 async def notifications(request: Request, session: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
     account = await require_account(request, session)
+    stored_notifications = list((await session.execute(
+        select(Notification)
+        .where(
+            Notification.tenant_id == account.tenant_id,
+            or_(Notification.recipient_account_id == account.id, Notification.recipient_account_id.is_(None)),
+        )
+        .order_by(Notification.created_at.desc())
+        .limit(20)
+    )).scalars().all())
+    rows = [
+        {
+            "id": str(notification.id),
+            "recipient_type": notification.recipient_role.upper(),
+            "recipient_id": str(notification.recipient_account_id) if notification.recipient_account_id else None,
+            "title": notification.title,
+            "body": notification.body or "",
+            "is_read": notification.is_read,
+            "ticket_id": str(notification.ticket_id) if notification.ticket_id else None,
+            "appointment_id": str(notification.appointment_id) if notification.appointment_id else None,
+            "type": notification.event_type,
+            "created_at": notification.created_at,
+        }
+        for notification in stored_notifications
+    ]
     ticket_query = select(Ticket)
     if account.role == "patient":
         ticket_query = ticket_query.where(Ticket.customer_phone == account.phone)
@@ -1155,8 +1416,8 @@ async def notifications(request: Request, session: AsyncSession = Depends(get_db
     marker_prefix = f"{account.id}:"
     markers = list((await session.execute(select(OperationalRecord).where(OperationalRecord.tenant_id == account.tenant_id, OperationalRecord.entity == "notification", OperationalRecord.resource == "read", OperationalRecord.title.like(f"{marker_prefix}%")))).scalars().all())
     read_ids = {marker.title.removeprefix(marker_prefix) for marker in markers}
-    return [{"id": str(ticket.id), "recipient_type": "PATIENT" if account.role == "patient" else "SPECIALIST", "recipient_id": str(account.id), "title": f"Queue update · {ticket.ticket_number}", "body": f"{ticket.queue_status.replace('_', ' ').title()} · {ticket.assigned_specialty or 'Front Desk'}", "is_read": str(ticket.id) in read_ids, "ticket_id": str(ticket.id), "urgency_level": ticket.urgency_level, "condition_name": ticket.matched_condition_id, "created_at": ticket.created_at} for ticket in tickets]
-
+    rows.extend({"id": str(ticket.id), "recipient_type": "PATIENT" if account.role == "patient" else "SPECIALIST", "recipient_id": str(account.id), "title": f"Queue update · {ticket.ticket_number}", "body": f"{ticket.queue_status.replace('_', ' ').title()} · {ticket.assigned_specialty or 'Front Desk'}", "is_read": str(ticket.id) in read_ids, "ticket_id": str(ticket.id), "urgency_level": ticket.urgency_level, "condition_name": ticket.matched_condition_id, "type": "QUEUE_UPDATE", "created_at": ticket.created_at} for ticket in tickets)
+    return sorted(rows, key=lambda row: row["created_at"], reverse=True)
 async def mark_notification(session: AsyncSession, account: AuthAccount, ticket_id: str) -> None:
     title = f"{account.id}:{ticket_id}"
     exists = await session.scalar(select(OperationalRecord).where(OperationalRecord.tenant_id == account.tenant_id, OperationalRecord.entity == "notification", OperationalRecord.resource == "read", OperationalRecord.title == title))

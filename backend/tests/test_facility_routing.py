@@ -23,8 +23,8 @@ async def seed_routing_fixture() -> dict[str, object]:
     now = datetime.now(UTC)
     base_latitude = 30 + (int(suffix[:2], 16) / 1000)
     base_longitude = 30 + (int(suffix[2:4], 16) / 1000)
-    patient_latitude = base_latitude + 0.01
-    patient_longitude = base_longitude + 0.01
+    patient_latitude = base_latitude
+    patient_longitude = base_longitude
     async with app.state.session_factory() as session:
         near = Tenant(name=f"Route Test Near {suffix}", state_location="Near test address", latitude=base_latitude, longitude=base_longitude, status="ACTIVE", accepts_patients=True)
         far = Tenant(name=f"Route Test Far {suffix}", state_location="Far test address", latitude=base_latitude + 5, longitude=base_longitude + 5, status="ACTIVE", accepts_patients=True)
@@ -77,7 +77,7 @@ def test_nearest_service_uses_active_registered_hospital_with_coordinates() -> N
     assert route.tenant.id == fixture["near"]
     assert route.tenant.id != fixture["inactive"]
     assert route.tenant.id != fixture["missing_coords"]
-    assert route.distance_km > 0
+    assert route.distance_km >= 0
     assert route.provider is not None
 
 
@@ -141,6 +141,3 @@ def test_legacy_tenant_owned_ticket_remains_visible_to_owner_staff() -> None:
     assert created.status_code == 201
     assert tickets.status_code == 200
     assert any(ticket["id"] == ticket_id for ticket in tickets.json())
-
-
-

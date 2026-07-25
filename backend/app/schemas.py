@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 Channel = Literal["WHATSAPP", "USSD", "WEB", "SMS"]
 UrgencyLevel = Literal["CRITICAL", "URGENT", "ROUTINE"]
-QueueStatus = Literal["QUEUED", "BEING_SEEN", "RESOLVED"]
+QueueStatus = Literal["QUEUED", "BEING_SEEN", "RESOLVED", "AWAITING_CLINICAL_REVIEW", "SPECIALIST_UNAVAILABLE"]
 
 
 def normalize_nigerian_phone_value(value: str | None) -> str | None:
@@ -231,10 +231,14 @@ class AppointmentMoveRequest(BaseModel):
 class AppointmentResponse(BaseModel):
     id: UUID
     tenant_id: UUID
+    hospital_id: UUID
     ticket_id: UUID
+    doctor_id: UUID | None = None
+    specialty_id: str | None = None
     slot_id: UUID
     customer_phone: str
-    status: Literal["BOOKED", "CANCELLED", "COMPLETED"]
+    urgency: str | None = None
+    status: Literal["BOOKED", "CANCELLED", "COMPLETED", "AWAITING_CLINICAL_REVIEW", "SPECIALIST_UNAVAILABLE"]
     provider_name: str
     specialty: str
     room_label: str

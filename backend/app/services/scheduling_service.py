@@ -6,24 +6,43 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Provider, ProviderSlot
+from app.models import AuthAccount, HospitalDoctorMembership, Provider, ProviderSlot
 from app.services.auth_service import apply_tenant_context
 
 
 async def seed_demo_schedule(db: AsyncSession, tenant_id: UUID) -> None:
     await apply_tenant_context(db, tenant_id)
     existing = await db.scalar(select(Provider.id).where(Provider.tenant_id == tenant_id).limit(1))
+    doctor = await db.scalar(select(AuthAccount).where(AuthAccount.tenant_id == tenant_id, AuthAccount.role == "doctor", AuthAccount.is_active.is_(True)).limit(1))
     if existing:
+        if doctor:
+            providers = list((await db.execute(select(Provider).where(Provider.tenant_id == tenant_id))).scalars().all())
+            for provider in providers:
+                if provider.doctor_id is None:
+                    provider.doctor_id = doctor.id
+                membership = await db.scalar(select(HospitalDoctorMembership).where(HospitalDoctorMembership.hospital_id == tenant_id, HospitalDoctorMembership.doctor_id == doctor.id, HospitalDoctorMembership.specialty_id == provider.specialty))
+                if not membership:
+                    db.add(HospitalDoctorMembership(hospital_id=tenant_id, doctor_id=doctor.id, specialty_id=provider.specialty, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, active_from=datetime.now(UTC) - timedelta(days=1)))
+            await db.commit()
         return
-
     providers = [
-        Provider(tenant_id=tenant_id, full_name="Dr. Ada Okafor", specialty="General Medicine", room_label="Room 2"),
-        Provider(tenant_id=tenant_id, full_name="Dr. Bassey Udo", specialty="Pediatrics", room_label="Room 4"),
-        Provider(tenant_id=tenant_id, full_name="Dr. Ifeoma Eze", specialty="Internal Medicine", room_label="Room 6"),
+        Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name="Demo General Medicine Doctor", specialty="General Medicine", room_label="Room 2"),
+        Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name="Demo Pediatrics Doctor", specialty="Pediatrics", room_label="Room 4"),
+        Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name="Demo Internal Medicine Doctor", specialty="Internal Medicine", room_label="Room 6"),
     ]
     db.add_all(providers)
     await db.flush()
-
+    if doctor:
+        for provider in providers:
+            db.add(HospitalDoctorMembership(
+                hospital_id=tenant_id,
+                doctor_id=doctor.id,
+                specialty_id=provider.specialty,
+                verification_status="VERIFIED",
+                employment_status="ACTIVE",
+                is_active=True,
+                active_from=datetime.now(UTC) - timedelta(days=1),
+            ))
     first_day = datetime.combine(datetime.now(UTC).date() + timedelta(days=1), time(hour=8), tzinfo=UTC)
     for day_offset in range(5):
         for provider_index, provider in enumerate(providers):

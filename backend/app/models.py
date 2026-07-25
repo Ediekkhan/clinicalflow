@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4, UUID
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, Uuid
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -156,9 +156,10 @@ class Provider(Base):
     tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     specialty: Mapped[str] = mapped_column(String(128), nullable=False)
+    doctor_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True, index=True)
     room_label: Mapped[str] = mapped_column(String(64), nullable=False)
+    max_daily_capacity: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-
 
 class ProviderSlot(Base):
     __tablename__ = "provider_slots"
@@ -176,23 +177,47 @@ class ProviderSlot(Base):
     lock_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_booked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+class HospitalDoctorMembership(Base):
+    __tablename__ = "hospital_doctor_memberships"
+    __table_args__ = (
+        UniqueConstraint("hospital_id", "doctor_id", "specialty_id", name="uq_hospital_doctor_specialty"),
+        Index("ix_hospital_doctor_memberships_hospital_specialty", "hospital_id", "specialty_id"),
+        Index("ix_hospital_doctor_memberships_doctor", "doctor_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    hospital_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    doctor_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=False)
+    specialty_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    employment_status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
+    notification_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    active_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    active_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 class Appointment(Base):
     __tablename__ = "appointments"
     __table_args__ = (
         Index("ix_appointments_tenant_status", "tenant_id", "status"),
         Index("ix_appointments_ticket", "ticket_id"),
+        Index("ix_appointments_hospital_doctor", "hospital_id", "doctor_id"),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    hospital_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
     ticket_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tickets.id"), nullable=False)
+    doctor_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True, index=True)
+    specialty_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     slot_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("provider_slots.id"), nullable=False)
     customer_phone: Mapped[str] = mapped_column(String(32), nullable=False)
+    urgency: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="BOOKED")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
-
 
 class ClientMutation(Base):
     __tablename__ = "client_mutations"
@@ -234,6 +259,25 @@ class SpecialistMessage(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        Index("ix_notifications_tenant_recipient", "tenant_id", "recipient_account_id"),
+        Index("ix_notifications_appointment", "appointment_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    recipient_account_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    recipient_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    appointment_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("appointments.id"), nullable=True)
+    ticket_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("tickets.id"), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 class OperationalRecord(Base):
     __tablename__ = "operational_records"

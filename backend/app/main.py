@@ -36,6 +36,8 @@ async def ensure_sqlite_additive_schema(engine) -> None:
 
         tenant_columns = await conn.run_sync(table_columns, "tenants")
         ticket_columns = await conn.run_sync(table_columns, "tickets")
+        provider_columns = await conn.run_sync(table_columns, "providers")
+        appointment_columns = await conn.run_sync(table_columns, "appointments")
         if tenant_columns and "latitude" not in tenant_columns:
             await conn.execute(text("ALTER TABLE tenants ADD COLUMN latitude FLOAT"))
         if tenant_columns and "longitude" not in tenant_columns:
@@ -53,6 +55,31 @@ async def ensure_sqlite_additive_schema(engine) -> None:
         if ticket_columns:
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tickets_routed_tenant_id ON tickets (routed_tenant_id)"))
             await conn.execute(text("UPDATE tickets SET routed_tenant_id = tenant_id WHERE routed_tenant_id IS NULL"))
+        if provider_columns and "doctor_id" not in provider_columns:
+            await conn.execute(text("ALTER TABLE providers ADD COLUMN doctor_id CHAR(32)"))
+        if provider_columns and "max_daily_capacity" not in provider_columns:
+            await conn.execute(text("ALTER TABLE providers ADD COLUMN max_daily_capacity INTEGER NOT NULL DEFAULT 12"))
+        if appointment_columns and "hospital_id" not in appointment_columns:
+            await conn.execute(text("ALTER TABLE appointments ADD COLUMN hospital_id CHAR(32)"))
+        if appointment_columns and "doctor_id" not in appointment_columns:
+            await conn.execute(text("ALTER TABLE appointments ADD COLUMN doctor_id CHAR(32)"))
+        if appointment_columns and "specialty_id" not in appointment_columns:
+            await conn.execute(text("ALTER TABLE appointments ADD COLUMN specialty_id VARCHAR(128)"))
+        if appointment_columns and "urgency" not in appointment_columns:
+            await conn.execute(text("ALTER TABLE appointments ADD COLUMN urgency VARCHAR(32)"))
+        if appointment_columns and "starts_at" not in appointment_columns:
+            await conn.execute(text("ALTER TABLE appointments ADD COLUMN starts_at DATETIME"))
+        if appointment_columns and "ends_at" not in appointment_columns:
+            await conn.execute(text("ALTER TABLE appointments ADD COLUMN ends_at DATETIME"))
+        if appointment_columns:
+            await conn.execute(text("UPDATE appointments SET hospital_id = tenant_id WHERE hospital_id IS NULL"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_appointments_hospital_doctor ON appointments (hospital_id, doctor_id)"))
+        await conn.execute(text("CREATE TABLE IF NOT EXISTS hospital_doctor_memberships (id CHAR(32) PRIMARY KEY, hospital_id CHAR(32) NOT NULL, doctor_id CHAR(32) NOT NULL, specialty_id VARCHAR(128) NOT NULL, verification_status VARCHAR(32) NOT NULL DEFAULT 'PENDING', employment_status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', notification_preferences TEXT, is_active BOOLEAN NOT NULL DEFAULT 1, active_from DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, active_until DATETIME, UNIQUE (hospital_id, doctor_id, specialty_id))"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_hospital_doctor_memberships_hospital_specialty ON hospital_doctor_memberships (hospital_id, specialty_id)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_hospital_doctor_memberships_doctor ON hospital_doctor_memberships (doctor_id)"))
+        await conn.execute(text("CREATE TABLE IF NOT EXISTS notifications (id CHAR(32) PRIMARY KEY, tenant_id CHAR(32) NOT NULL, recipient_account_id CHAR(32), recipient_role VARCHAR(32) NOT NULL, appointment_id CHAR(32), ticket_id CHAR(32), event_type VARCHAR(64) NOT NULL, title VARCHAR(255) NOT NULL, body TEXT, payload_json TEXT, is_read BOOLEAN NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notifications_tenant_recipient ON notifications (tenant_id, recipient_account_id)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notifications_appointment ON notifications (appointment_id)"))
 
 
 @asynccontextmanager
