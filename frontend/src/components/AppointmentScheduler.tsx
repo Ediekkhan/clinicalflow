@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Ban, CalendarClock, GripVertical, Lock, Radio } from 'lucide-react';
+import { AlertTriangle, Ban, CalendarClock, GripVertical, Lock, LogIn, Radio, RefreshCcw } from 'lucide-react';
 import type { Appointment, ProviderSlot } from '@/lib/types';
-import { listAppointments, listOpenSlots, lockSlot, rescheduleAppointment } from '@/lib/api';
+import { ApiError, listHospitalAppointments, listHospitalSlots, lockSlot, rescheduleAppointment } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 export function AppointmentScheduler() {
@@ -11,29 +11,34 @@ export function AppointmentScheduler() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [draggedAppointment, setDraggedAppointment] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+
+  async function loadSchedule() {
+    setIsLoading(true);
+    setError(null);
+    setAccessDenied(false);
+    const results = await Promise.allSettled([listHospitalSlots(), listHospitalAppointments()]);
+    const slotResult = results[0];
+    const appointmentResult = results[1];
+    if (slotResult.status === 'fulfilled') setSlots(slotResult.value);
+    else setSlots([]);
+    if (appointmentResult.status === 'fulfilled') setAppointments(appointmentResult.value);
+    else setAppointments([]);
+    const failures = results.filter((result) => result.status === 'rejected') as PromiseRejectedResult[];
+    const forbidden = failures.some((failure) => failure.reason instanceof ApiError && failure.reason.status === 403);
+    if (forbidden) {
+      setAccessDenied(true);
+      setError('You do not have access to this hospital appointment workspace.');
+    } else if (failures.length > 0) {
+      setError('Your session may have expired or the appointment service is unavailable.');
+    }
+    setIsLoading(false);
+  }
 
   useEffect(() => {
-    let cancelled = false;
-    async function loadSlots() {
-      try {
-        const [slotData, appointmentData] = await Promise.all([listOpenSlots(), listAppointments()]);
-        if (!cancelled) {
-          setSlots(slotData);
-          setAppointments(appointmentData);
-        }
-      } catch (error) {
-        console.error(error);
-        if (!cancelled) setSlots([]);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    }
-    void loadSlots();
-    return () => {
-      cancelled = true;
-    };
+    void loadSchedule();
   }, []);
-
   const grouped = useMemo(() => {
     const providers = Array.from(new Set(slots.map((slot) => slot.provider_name).filter(Boolean)));
     return providers.map((provider) => ({
@@ -58,8 +63,9 @@ export function AppointmentScheduler() {
     );
     try {
       await lockSlot(slot.id, !slot.is_locked, slot.is_locked ? undefined : 'Unavailable');
-    } catch (error) {
-      console.error(error);
+      setError(null);
+    } catch {
+      setError('Unable to update this slot. Please retry.');
       setSlots((current) => current.map((item) => item.id === slot.id ? slot : item));
     }
   }
@@ -78,10 +84,10 @@ export function AppointmentScheduler() {
     try {
       const updated = await rescheduleAppointment(appointment.id, targetSlotId);
       setAppointments((current) => current.map((item) => item.id === updated.id ? updated : item));
-    } catch (error) {
-      console.error(error);
+    } catch {
       setSlots((current) => current.map((slot) => slot.id === previousSlotId ? { ...slot, is_booked: true } : slot.id === targetSlotId ? { ...slot, is_booked: false } : slot));
       setAppointments((current) => current.map((item) => item.id === appointment.id ? appointment : item));
+      setError('Unable to reschedule this appointment. Please retry.');
     }
   }
 
@@ -94,10 +100,33 @@ export function AppointmentScheduler() {
         </div>
         <span className="touch-target inline-flex items-center gap-2 bg-emerald-50 text-emerald-700"><Radio className="h-4 w-4" /> Patient updates automatic</span>
       </div>
+      {error ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-bold">Unable to load hospital appointments</p>
+                <p>{error}</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {!accessDenied ? (
+                <button type="button" onClick={() => void loadSchedule()} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-white px-3 py-2 font-bold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100">
+                  <RefreshCcw className="h-4 w-4" /> Retry
+                </button>
+              ) : null}
+              <a href="/hospital/login?reason=session-expired" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-emerald-900 px-3 py-2 font-bold text-white hover:bg-emerald-800">
+                <LogIn className="h-4 w-4" /> Sign in again
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {isLoading ? (
         <div className="grid gap-3 lg:grid-cols-3">{[1, 2, 3].map((item) => <div key={item} className="h-72 animate-pulse rounded-lg bg-slate-100" />)}</div>
       ) : grouped.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">No open slots available</div>
+        <div className="rounded-lg border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">No appointments scheduled yet</div>
       ) : (
         <div className="grid gap-3 lg:grid-cols-3">
           {grouped.map((providerGroup) => (
@@ -149,7 +178,7 @@ export function AppointmentScheduler() {
       )}
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
         <CalendarClock className="mr-2 inline h-5 w-5" />
-        Locking a slot calls the shared appointment API and broadcasts calendar changes to dashboards.
+        Hospital appointments and provider slots are scoped to verified staff at this hospital.
       </div>
     </section>
   );

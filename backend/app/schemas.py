@@ -41,6 +41,18 @@ class HospitalLoginRequest(BaseModel):
     password: str = Field(min_length=4, max_length=128)
 
 
+class StaffMembershipResponse(BaseModel):
+    id: UUID
+    hospital_id: UUID
+    department_id: str
+    role: str
+    specialty_id: str | None = None
+    verification_status: str
+    employment_status: str
+    is_active: bool
+    is_on_duty: bool
+
+
 class AuthProfileResponse(BaseModel):
     id: str
     role: str
@@ -67,6 +79,8 @@ class AuthProfileResponse(BaseModel):
     card_valid_from: datetime | None = None
     card_valid_until: datetime | None = None
     locked_fields: list[str] = Field(default_factory=list)
+    memberships: list[StaffMembershipResponse] = Field(default_factory=list)
+    selected_membership_id: str | None = None
 
 
 class PatientProfileUpdate(BaseModel):
@@ -232,8 +246,10 @@ class AppointmentResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     hospital_id: UUID
+    department_id: str | None = None
     ticket_id: UUID
     doctor_id: UUID | None = None
+    staff_membership_id: UUID | None = None
     specialty_id: str | None = None
     slot_id: UUID
     customer_phone: str

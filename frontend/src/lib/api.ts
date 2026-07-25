@@ -1,4 +1,4 @@
-import type { Appointment, ProviderSlot, Ticket } from '@/lib/types';
+import type { Appointment, HospitalDepartment, HospitalPatient, HospitalSpecialist, ProviderSlot, Ticket } from '@/lib/types';
 
 const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
 
@@ -20,29 +20,71 @@ function getApiBase() {
   return CONFIGURED_API_BASE;
 }
 
+function loginDestination() {
+  if (typeof window === 'undefined') return '/login';
+  const path = window.location.pathname;
+  if (path.startsWith('/hospital')) return '/hospital/login';
+  if (path.startsWith('/specialist')) return '/specialist/login';
+  if (path.startsWith('/nurse')) return '/auth/login';
+  if (path.startsWith('/dashboard')) return '/login';
+  return '/login';
+}
+
+function clearRoleCookie() {
+  if (typeof document === 'undefined') return;
+  document.cookie = 'synaptiverse_role=; Max-Age=0; Path=/; SameSite=Lax';
+}
+
+function redirectToLogin(reason = 'session-expired') {
+  if (typeof window === 'undefined') return;
+  clearRoleCookie();
+  const next = `${window.location.pathname}${window.location.search}`;
+  const destination = `${loginDestination()}?next=${encodeURIComponent(next)}&reason=${encodeURIComponent(reason)}`;
+  window.location.assign(destination);
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string, public detail?: unknown) {
     super(message);
   }
 }
 
-async function requestJson<T>(url: string, init: RequestInit = {}): Promise<T> {
+async function refreshSession() {
+  return fetch(`${getApiBase()}/api/v1/auth/refresh`, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+  });
+}
+
+export async function requestJson<T>(url: string, init: RequestInit = {}, retry = true): Promise<T> {
   const headers = {
     ...(init.body ? { 'Content-Type': 'application/json' } : {}),
     ...(init.headers ?? {}),
   } as HeadersInit;
+  const isAuthRequest = url.startsWith('/api/v1/auth/');
   const response = await fetch(`${getApiBase()}${url}`, {
     ...init,
     headers,
     credentials: 'include',
     cache: 'no-store',
   });
+
+  if (response.status === 401 && retry && !isAuthRequest) {
+    const refreshed = await refreshSession();
+    if (refreshed.ok) return requestJson<T>(url, init, false);
+    redirectToLogin('session-expired');
+    throw new ApiError(401, 'Authentication required');
+  }
+
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     const detail = payload.detail;
-    const message = typeof detail === 'string' ? detail : detail?.message ?? 'ClinicalFlow API request failed.';
+    const message = typeof detail === 'string' ? detail : detail?.message ?? payload.message ?? 'ClinicalFlow API request failed.';
     throw new ApiError(response.status, message, detail);
   }
+
+  if (response.status === 204) return null as T;
   return response.json();
 }
 
@@ -81,6 +123,10 @@ export async function listOpenSlots(): Promise<ProviderSlot[]> {
   return requestJson('/api/v1/appointments/slots');
 }
 
+export async function listHospitalSlots(): Promise<ProviderSlot[]> {
+  return requestJson('/api/v1/hospital/appointment-slots');
+}
+
 export async function lockSlot(slotId: string, isLocked: boolean, reason?: string) {
   return requestJson(`/api/v1/appointments/slots/${slotId}/lock`, { method: 'PATCH', body: JSON.stringify({ is_locked: isLocked, reason }) });
 }
@@ -91,6 +137,22 @@ export async function bookAppointment(ticketId: string, slotId: string, customer
 
 export async function listAppointments(): Promise<Appointment[]> {
   return requestJson('/api/v1/appointments');
+}
+
+export async function listHospitalAppointments(): Promise<Appointment[]> {
+  return requestJson('/api/v1/hospital/appointments');
+}
+
+export async function listHospitalPatients(): Promise<{ identity?: Record<string, unknown>; items: HospitalPatient[] }> {
+  return requestJson('/api/v1/hospital/patients');
+}
+
+export async function listHospitalSpecialists(): Promise<{ identity?: Record<string, unknown>; items: HospitalSpecialist[] }> {
+  return requestJson('/api/v1/hospital/specialists');
+}
+
+export async function listHospitalDepartments(): Promise<{ identity?: Record<string, unknown>; items: HospitalDepartment[] }> {
+  return requestJson('/api/v1/hospital/departments');
 }
 
 export async function rescheduleAppointment(appointmentId: string, slotId: string): Promise<Appointment> {

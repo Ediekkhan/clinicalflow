@@ -12,7 +12,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import AuthAccount, AuthSession, Tenant
+from app.models import AuthAccount, AuthSession, StaffMembership, Tenant
 
 ACCESS_COOKIE = "synaptiverse_access"
 REFRESH_COOKIE = "synaptiverse_refresh"
@@ -156,4 +156,11 @@ async def seed_demo_accounts(db: AsyncSession) -> None:
         if not await find_account(db, seed["role"], seed["identifier"], tenant_id):
             credential = {"nurse": "2468", "admin": "1357"}.get(seed["role"], "Password123!")
             db.add(AuthAccount(tenant_id=tenant_id, password_hash=hash_password(credential), **seed))
+    await db.flush()
+    staff_accounts = list((await db.execute(select(AuthAccount).where(AuthAccount.tenant_id == tenant_id, AuthAccount.role.in_(["doctor", "nurse", "hospital_admin"])))).scalars().all())
+    for account in staff_accounts:
+        department = account.specialty or "General Medicine"
+        existing_membership = await db.scalar(select(StaffMembership).where(StaffMembership.user_id == account.id, StaffMembership.hospital_id == tenant_id, StaffMembership.department_id == department, StaffMembership.role == account.role))
+        if not existing_membership:
+            db.add(StaffMembership(user_id=account.id, hospital_id=tenant_id, department_id=department, role=account.role, specialty_id=account.specialty, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, is_on_duty=True, active_from=utc_now() - timedelta(days=1)))
     await db.commit()

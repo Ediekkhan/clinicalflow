@@ -12,7 +12,7 @@ from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Appointment, AuthAccount, AuthSession, AuditLog, ClientMutation, ConsultationNote, DemoRequest, HospitalDoctorMembership, Notification, OperationalRecord, Provider, ProviderSlot, SpecialistMessage, Ticket, Tenant
+from app.models import Appointment, AuthAccount, AuthSession, AuditLog, ClientMutation, ConsultationNote, DemoRequest, HospitalDepartment, HospitalDoctorMembership, Notification, OperationalRecord, ProviderAvailability, StaffInvitation, StaffMembership, Provider, ProviderSlot, SpecialistMessage, Ticket, Tenant
 from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
 from app.services.audit_service import AuditAction, write_audit_log
 from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, session_for_refresh_token, utc_now, verify_password
@@ -91,6 +91,58 @@ def ticket_destination_queue(tenant_id: uuid.UUID):
 
 def ticket_destination_id(ticket: Ticket) -> uuid.UUID:
     return ticket.routed_tenant_id or ticket.tenant_id
+
+def department_for_specialty(specialty_id: str | None) -> str:
+    return (specialty_id or "Front Desk").strip() or "Front Desk"
+
+def membership_is_active_at(membership: StaffMembership, when: datetime) -> bool:
+    return (
+        membership.is_active
+        and membership.is_on_duty
+        and membership.verification_status == "VERIFIED"
+        and membership.employment_status == "ACTIVE"
+        and membership.active_from <= when
+        and (membership.active_until is None or membership.active_until >= when)
+    )
+
+async def active_staff_memberships(session: AsyncSession, account: AuthAccount) -> list[StaffMembership]:
+    now = utc_now()
+    return list((await session.execute(
+        select(StaffMembership).where(
+            StaffMembership.user_id == account.id,
+            StaffMembership.is_active.is_(True),
+            StaffMembership.verification_status == "VERIFIED",
+            StaffMembership.employment_status == "ACTIVE",
+            StaffMembership.active_from <= now,
+            or_(StaffMembership.active_until.is_(None), StaffMembership.active_until >= now),
+        )
+    )).scalars().all())
+
+async def require_staff_workspace(session: AsyncSession, account: AuthAccount, *, hospital_id: uuid.UUID | None = None, department_id: str | None = None, roles: set[str] | None = None, specialty_id: str | None = None, on_duty: bool = False) -> StaffMembership:
+    now = utc_now()
+    query = select(StaffMembership).where(
+        StaffMembership.user_id == account.id,
+        StaffMembership.is_active.is_(True),
+        StaffMembership.verification_status == "VERIFIED",
+        StaffMembership.employment_status == "ACTIVE",
+        StaffMembership.active_from <= now,
+        or_(StaffMembership.active_until.is_(None), StaffMembership.active_until >= now),
+    )
+    if hospital_id is not None:
+        query = query.where(StaffMembership.hospital_id == hospital_id)
+    if department_id is not None:
+        query = query.where(StaffMembership.department_id == department_id)
+    if roles is not None:
+        query = query.where(StaffMembership.role.in_(list(roles)))
+    if specialty_id is not None:
+        query = query.where(StaffMembership.specialty_id == specialty_id)
+    if on_duty:
+        query = query.where(StaffMembership.is_on_duty.is_(True))
+    membership = await session.scalar(query.order_by(StaffMembership.created_at.asc()).limit(1))
+    if not membership:
+        raise HTTPException(status_code=403, detail="No verified active staff membership for this workspace")
+    await apply_tenant_context(session, membership.hospital_id)
+    return membership
 
 
 def build_ticket_response(ticket: Ticket) -> TicketResponse:
@@ -174,9 +226,17 @@ async def create_appointment_notification(
     title: str,
     body: str,
     payload: dict[str, Any],
+    recipient_membership_id: uuid.UUID | None = None,
+    hospital_id: uuid.UUID | None = None,
+    department_id: str | None = None,
+    priority: str = "NORMAL",
 ) -> Notification:
     notification = Notification(
         tenant_id=tenant_id,
+        recipient_user_id=recipient_account_id,
+        recipient_membership_id=recipient_membership_id,
+        hospital_id=hospital_id or (appointment.hospital_id if appointment else tenant_id),
+        department_id=department_id or (appointment.department_id if appointment else None),
         recipient_account_id=recipient_account_id,
         recipient_role=recipient_role,
         appointment_id=appointment.id if appointment else None,
@@ -185,10 +245,10 @@ async def create_appointment_notification(
         title=title,
         body=body,
         payload_json=json.dumps(payload, default=str),
+        priority=priority,
     )
     session.add(notification)
     return notification
-
 
 async def broadcast_appointment_event(tenant_id: uuid.UUID, event_type: str, payload: dict[str, Any], recipient_account_id: uuid.UUID | None = None) -> None:
     await triage_manager.broadcast(
@@ -348,6 +408,44 @@ async def logout_auth(request: Request, response: Response, session: AsyncSessio
     response.status_code = 204
     return response
 
+@router.get("/staff/workspaces")
+async def staff_workspaces(request: Request, session: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
+    account = await require_roles(request, session, {"doctor", "specialist", "nurse", "department_coordinator", "hospital_admin", "admin"})
+    memberships = await active_staff_memberships(session, account)
+    return [
+        {
+            "id": str(membership.id),
+            "hospital_id": str(membership.hospital_id),
+            "department_id": membership.department_id,
+            "role": membership.role,
+            "specialty_id": membership.specialty_id,
+            "verification_status": membership.verification_status,
+            "employment_status": membership.employment_status,
+            "is_active": membership.is_active,
+            "is_on_duty": membership.is_on_duty,
+        }
+        for membership in memberships
+    ]
+
+@router.post("/staff/workspaces/{membership_id}/select")
+async def select_staff_workspace(membership_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    token = request.cookies.get(ACCESS_COOKIE)
+    authenticated = await account_for_access_token(session, token) if token else None
+    if not authenticated:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    account, auth_session = authenticated
+    membership = await session.scalar(select(StaffMembership).where(
+        StaffMembership.id == uuid.UUID(membership_id),
+        StaffMembership.user_id == account.id,
+        StaffMembership.is_active.is_(True),
+        StaffMembership.verification_status == "VERIFIED",
+        StaffMembership.employment_status == "ACTIVE",
+    ))
+    if not membership:
+        raise HTTPException(status_code=403, detail="Staff workspace is not active or verified")
+    auth_session.selected_membership_id = membership.id
+    await session.commit()
+    return {"ok": True, "selected_membership_id": str(membership.id), "hospital_id": str(membership.hospital_id), "department_id": membership.department_id}
 @router.get("/hospital/me", response_model=AuthProfileResponse)
 async def hospital_profile(request: Request, session: AsyncSession = Depends(get_db)) -> AuthProfileResponse:
     account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "admin"})
@@ -389,6 +487,194 @@ async def hospital_waiting_room(request: Request, session: AsyncSession = Depend
         ],
         "departments": list(departments.values()),
     }
+
+async def require_hospital_membership(request: Request, session: AsyncSession, roles: set[str] | None = None) -> tuple[AuthAccount, StaffMembership, Tenant | None]:
+    account = await require_roles(request, session, {"doctor", "specialist", "nurse", "department_coordinator", "hospital_admin", "admin"})
+    membership = await require_staff_workspace(session, account, roles=roles or {"doctor", "specialist", "nurse", "department_coordinator", "hospital_admin"})
+    tenant = await session.get(Tenant, membership.hospital_id)
+    return account, membership, tenant
+
+
+def department_code(value: str) -> str:
+    return value.strip().lower().replace(" ", "-") or "department"
+
+
+async def hospital_ticket_items(session: AsyncSession, hospital_id: uuid.UUID) -> list[dict[str, Any]]:
+    rows = list((await session.execute(
+        select(Ticket, Appointment, AuthAccount)
+        .outerjoin(Appointment, Appointment.ticket_id == Ticket.id)
+        .outerjoin(AuthAccount, AuthAccount.id == Appointment.doctor_id)
+        .where(ticket_destination_queue(hospital_id))
+        .order_by(Ticket.created_at.desc())
+        .limit(100)
+    )).all())
+    items: list[dict[str, Any]] = []
+    for ticket, appointment, doctor in rows:
+        assignment_status = "APPOINTMENT_CONFIRMED" if appointment and appointment.doctor_id else "AWAITING_ASSIGNMENT"
+        status = "COMPLETED" if ticket.queue_status == "RESOLVED" else ticket.queue_status
+        if appointment and appointment.status == "CANCELLED":
+            status = "CANCELLED"
+        items.append({
+            "id": str(ticket.id),
+            "patient_name": "Patient",
+            "card_number": None,
+            "ticket_number": ticket.ticket_number,
+            "arrival_time": (appointment.starts_at or ticket.created_at).isoformat() if appointment else ticket.created_at.isoformat(),
+            "urgency": ticket.urgency_level,
+            "required_specialty": ticket.assigned_specialty,
+            "department": appointment.department_id if appointment else department_for_specialty(ticket.assigned_specialty),
+            "assigned_doctor": f"{doctor.first_name} {doctor.last_name}" if doctor else "Awaiting assignment",
+            "queue_status": ticket.queue_status,
+            "status": status,
+            "assignment_status": assignment_status,
+            "routing_distance_km": ticket.route_distance_km,
+            "appointment_status": appointment.status if appointment else None,
+            "appointment_id": str(appointment.id) if appointment else None,
+        })
+    return items
+
+
+async def hospital_specialist_items(session: AsyncSession, hospital_id: uuid.UUID, department_id: str | None = None) -> list[dict[str, Any]]:
+    query = (
+        select(AuthAccount, StaffMembership, Provider)
+        .join(StaffMembership, StaffMembership.user_id == AuthAccount.id)
+        .outerjoin(Provider, (Provider.doctor_id == AuthAccount.id) & (Provider.tenant_id == StaffMembership.hospital_id) & (Provider.specialty == StaffMembership.specialty_id))
+        .where(
+            StaffMembership.hospital_id == hospital_id,
+            StaffMembership.role.in_(["doctor", "specialist"]),
+            StaffMembership.is_active.is_(True),
+            StaffMembership.verification_status == "VERIFIED",
+            StaffMembership.employment_status == "ACTIVE",
+            AuthAccount.is_active.is_(True),
+        )
+    )
+    if department_id:
+        query = query.where(StaffMembership.department_id == department_id)
+    rows = list((await session.execute(query.order_by(StaffMembership.department_id, AuthAccount.last_name))).all())
+    items: list[dict[str, Any]] = []
+    now = utc_now()
+    for account, membership, provider in rows:
+        booked_today = await session.scalar(select(func.count(Appointment.id)).where(Appointment.hospital_id == hospital_id, Appointment.staff_membership_id == membership.id, Appointment.status == "BOOKED", Appointment.starts_at >= datetime.combine(now.date(), time.min, tzinfo=UTC), Appointment.starts_at < datetime.combine(now.date(), time.min, tzinfo=UTC) + timedelta(days=1)))
+        next_slot = None
+        if provider:
+            next_slot = await session.scalar(select(ProviderSlot).where(ProviderSlot.provider_id == provider.id, ProviderSlot.tenant_id == hospital_id, ProviderSlot.starts_at >= now, ProviderSlot.is_locked.is_(False), ProviderSlot.is_booked.is_(False)).order_by(ProviderSlot.starts_at.asc()).limit(1))
+        capacity = membership.daily_capacity or (provider.max_daily_capacity if provider else 12)
+        availability = "OFF_DUTY"
+        if membership.is_on_duty:
+            availability = "FULLY_BOOKED" if (booked_today or 0) >= capacity else "AVAILABLE"
+        items.append({
+            "id": str(membership.id),
+            "user_id": str(account.id),
+            "full_name": f"{account.first_name} {account.last_name}",
+            "title": account.role.replace("_", " ").title(),
+            "specialty": membership.specialty_id,
+            "department": membership.department_id,
+            "license_status": membership.verification_status,
+            "is_on_duty": membership.is_on_duty,
+            "availability": availability,
+            "next_available_slot": next_slot.starts_at.isoformat() if next_slot else None,
+            "appointments_today": booked_today or 0,
+            "current_workload": booked_today or 0,
+            "maximum_capacity": capacity,
+            "room_label": provider.room_label if provider else None,
+        })
+    return items
+
+
+async def hospital_department_items(session: AsyncSession, hospital_id: uuid.UUID) -> list[dict[str, Any]]:
+    departments = list((await session.execute(select(HospitalDepartment).where(HospitalDepartment.hospital_id == hospital_id, HospitalDepartment.status == "ACTIVE").order_by(HospitalDepartment.name))).scalars().all())
+    if not departments:
+        names = sorted({row[0] for row in (await session.execute(select(StaffMembership.department_id).where(StaffMembership.hospital_id == hospital_id))).all() if row[0]})
+        departments = [HospitalDepartment(id=uuid.uuid5(uuid.NAMESPACE_DNS, f"{hospital_id}:{name}"), hospital_id=hospital_id, name=name, code=department_code(name), status="ACTIVE") for name in names]
+    items: list[dict[str, Any]] = []
+    now = utc_now()
+    for department in departments:
+        doctors = await hospital_specialist_items(session, hospital_id, department.name)
+        waiting = await session.scalar(select(func.count(Ticket.id)).where(ticket_destination_queue(hospital_id), Ticket.assigned_specialty == department.name, Ticket.queue_status == "QUEUED"))
+        appointments_today = await session.scalar(select(func.count(Appointment.id)).where(Appointment.hospital_id == hospital_id, Appointment.department_id == department.name, Appointment.starts_at >= datetime.combine(now.date(), time.min, tzinfo=UTC), Appointment.starts_at < datetime.combine(now.date(), time.min, tzinfo=UTC) + timedelta(days=1)))
+        nurses_on_duty = await session.scalar(select(func.count(StaffMembership.id)).where(StaffMembership.hospital_id == hospital_id, StaffMembership.department_id == department.name, StaffMembership.role == "nurse", StaffMembership.is_on_duty.is_(True), StaffMembership.is_active.is_(True), StaffMembership.verification_status == "VERIFIED"))
+        items.append({
+            "id": str(department.id),
+            "name": department.name,
+            "code": department.code,
+            "description": department.description,
+            "status": department.status,
+            "coordinator": None,
+            "total_doctors": len(doctors),
+            "available_doctors": sum(doctor["availability"] == "AVAILABLE" for doctor in doctors),
+            "specialists_on_duty": sum(bool(doctor["is_on_duty"]) for doctor in doctors),
+            "nurses_on_duty": nurses_on_duty or 0,
+            "patients_waiting": waiting or 0,
+            "appointments_today": appointments_today or 0,
+            "average_wait_time_minutes": None,
+            "capacity_status": "AVAILABLE" if any(doctor["availability"] == "AVAILABLE" for doctor in doctors) else "LIMITED",
+            "available_doctors_list": doctors,
+        })
+    return items
+
+
+@router.get("/hospital/patients")
+async def hospital_patients(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    _account, membership, tenant = await require_hospital_membership(request, session)
+    return {"identity": {"name": tenant.name if tenant else "Hospital", "location": tenant.state_location if tenant else None, "account_type": membership.role}, "items": await hospital_ticket_items(session, membership.hospital_id)}
+
+
+@router.get("/hospital/specialists")
+async def hospital_specialists(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    _account, membership, tenant = await require_hospital_membership(request, session)
+    return {"identity": {"name": tenant.name if tenant else "Hospital", "location": tenant.state_location if tenant else None, "account_type": membership.role}, "items": await hospital_specialist_items(session, membership.hospital_id)}
+
+
+@router.get("/hospital/departments")
+async def hospital_departments(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    _account, membership, tenant = await require_hospital_membership(request, session)
+    return {"identity": {"name": tenant.name if tenant else "Hospital", "location": tenant.state_location if tenant else None, "account_type": membership.role}, "items": await hospital_department_items(session, membership.hospital_id)}
+
+
+@router.get("/hospital/departments/{department_id}")
+async def hospital_department_detail(department_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    _account, membership, _tenant = await require_hospital_membership(request, session)
+    departments = await hospital_department_items(session, membership.hospital_id)
+    match = next((department for department in departments if department["id"] == department_id or department["code"] == department_id or department["name"] == department_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Department not found")
+    return match
+
+
+@router.get("/hospital/departments/{department_id}/available-doctors")
+async def hospital_department_available_doctors(department_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    _account, membership, _tenant = await require_hospital_membership(request, session)
+    departments = await hospital_department_items(session, membership.hospital_id)
+    match = next((department for department in departments if department["id"] == department_id or department["code"] == department_id or department["name"] == department_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail="Department not found")
+    return {"items": [doctor for doctor in match["available_doctors_list"] if doctor["availability"] == "AVAILABLE"]}
+
+
+@router.get("/hospital/appointment-slots", response_model=list[SlotResponse])
+async def hospital_appointment_slots(request: Request, session: AsyncSession = Depends(get_db)) -> list[SlotResponse]:
+    _account, membership, _tenant = await require_hospital_membership(request, session)
+    rows = list((await session.execute(
+        select(ProviderSlot, Provider, StaffMembership)
+        .join(Provider, Provider.id == ProviderSlot.provider_id)
+        .join(StaffMembership, (StaffMembership.user_id == Provider.doctor_id) & (StaffMembership.hospital_id == ProviderSlot.tenant_id) & (StaffMembership.specialty_id == Provider.specialty))
+        .where(
+            ProviderSlot.tenant_id == membership.hospital_id,
+            Provider.is_active.is_(True),
+            StaffMembership.is_active.is_(True),
+            StaffMembership.verification_status == "VERIFIED",
+            StaffMembership.employment_status == "ACTIVE",
+        )
+        .order_by(ProviderSlot.starts_at.asc())
+    )).all())
+    return [SlotResponse(id=slot.id, tenant_id=slot.tenant_id, provider_name=provider.full_name, specialty=provider.specialty, room_label=provider.room_label, starts_at=slot.starts_at, ends_at=slot.ends_at, is_locked=slot.is_locked, lock_reason=slot.lock_reason, is_booked=slot.is_booked) for slot, provider, _staff in rows]
+
+
+@router.get("/hospital/appointments", response_model=list[AppointmentResponse])
+async def hospital_appointments(request: Request, session: AsyncSession = Depends(get_db)) -> list[AppointmentResponse]:
+    _account, membership, _tenant = await require_hospital_membership(request, session)
+    result = await session.execute(select(Appointment).where(Appointment.hospital_id == membership.hospital_id).order_by(Appointment.created_at.desc()).limit(100))
+    return [await appointment_response(session, appointment) for appointment in result.scalars().all()]
 
 @router.get("/hospital/settings")
 async def hospital_settings(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -900,8 +1186,10 @@ async def appointment_response(session: AsyncSession, appointment: Appointment) 
         id=appointment.id,
         tenant_id=appointment.tenant_id,
         hospital_id=appointment.hospital_id,
+        department_id=appointment.department_id,
         ticket_id=appointment.ticket_id,
         doctor_id=appointment.doctor_id,
+        staff_membership_id=appointment.staff_membership_id,
         specialty_id=appointment.specialty_id,
         slot_id=appointment.slot_id,
         customer_phone=appointment.customer_phone,
@@ -923,6 +1211,7 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
         raise HTTPException(status_code=404, detail="Ticket not found for this phone")
     destination_tenant_id = ticket_destination_id(ticket)
     specialty_id = ticket.assigned_specialty
+    department_id = department_for_specialty(specialty_id)
     if not specialty_id:
         raise HTTPException(status_code=409, detail="Ticket has no triage specialty for doctor assignment")
     existing = await session.scalar(select(Appointment).where(Appointment.ticket_id == ticket.id, Appointment.status == "BOOKED"))
@@ -931,14 +1220,14 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
 
     await apply_tenant_context(session, destination_tenant_id)
     row = (await session.execute(
-        select(ProviderSlot, Provider, AuthAccount, HospitalDoctorMembership)
+        select(ProviderSlot, Provider, AuthAccount, StaffMembership)
         .join(Provider, Provider.id == ProviderSlot.provider_id)
         .join(AuthAccount, AuthAccount.id == Provider.doctor_id)
         .join(
-            HospitalDoctorMembership,
-            (HospitalDoctorMembership.hospital_id == ProviderSlot.tenant_id)
-            & (HospitalDoctorMembership.doctor_id == AuthAccount.id)
-            & (HospitalDoctorMembership.specialty_id == Provider.specialty),
+            StaffMembership,
+            (StaffMembership.hospital_id == ProviderSlot.tenant_id)
+            & (StaffMembership.user_id == AuthAccount.id)
+            & (StaffMembership.specialty_id == Provider.specialty),
         )
         .where(
             ProviderSlot.id == payload.slot_id,
@@ -949,48 +1238,55 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
             Provider.specialty == specialty_id,
             AuthAccount.is_active.is_(True),
             AuthAccount.role.in_(["doctor", "specialist"]),
-            HospitalDoctorMembership.is_active.is_(True),
-            HospitalDoctorMembership.verification_status == "VERIFIED",
-            HospitalDoctorMembership.employment_status == "ACTIVE",
-            HospitalDoctorMembership.active_from <= ProviderSlot.starts_at,
-            or_(HospitalDoctorMembership.active_until.is_(None), HospitalDoctorMembership.active_until >= ProviderSlot.starts_at),
+            StaffMembership.department_id == department_id,
+            StaffMembership.role.in_(["doctor", "specialist"]),
+            StaffMembership.is_active.is_(True),
+            StaffMembership.is_on_duty.is_(True),
+            StaffMembership.verification_status == "VERIFIED",
+            StaffMembership.employment_status == "ACTIVE",
+            StaffMembership.active_from <= ProviderSlot.starts_at,
+            or_(StaffMembership.active_until.is_(None), StaffMembership.active_until >= ProviderSlot.starts_at),
         )
         .order_by(ProviderSlot.starts_at.asc(), Provider.full_name.asc())
         .with_for_update()
     )).first()
-
     if not row:
         ticket.queue_status = "AWAITING_CLINICAL_REVIEW"
-        eligible_doctors = list((await session.execute(
-            select(AuthAccount)
-            .join(HospitalDoctorMembership, HospitalDoctorMembership.doctor_id == AuthAccount.id)
+        eligible_rows = list((await session.execute(
+            select(AuthAccount, StaffMembership)
+            .join(StaffMembership, StaffMembership.user_id == AuthAccount.id)
             .where(
-                HospitalDoctorMembership.hospital_id == destination_tenant_id,
-                HospitalDoctorMembership.specialty_id == specialty_id,
-                HospitalDoctorMembership.is_active.is_(True),
-                HospitalDoctorMembership.verification_status == "VERIFIED",
-                HospitalDoctorMembership.employment_status == "ACTIVE",
+                StaffMembership.hospital_id == destination_tenant_id,
+                StaffMembership.department_id == department_id,
+                StaffMembership.specialty_id == specialty_id,
+                StaffMembership.role.in_(["doctor", "specialist", "department_coordinator"]),
+                StaffMembership.is_active.is_(True),
+                StaffMembership.is_on_duty.is_(True),
+                StaffMembership.verification_status == "VERIFIED",
+                StaffMembership.employment_status == "ACTIVE",
                 AuthAccount.is_active.is_(True),
             )
-        )).scalars().all())
-        recipients = eligible_doctors or [None]
-        for recipient in recipients:
+        )).all())
+        recipients = eligible_rows or [(None, None)]
+        for recipient, recipient_membership in recipients:
             await create_appointment_notification(
                 session,
                 tenant_id=destination_tenant_id,
                 recipient_account_id=recipient.id if recipient else None,
-                recipient_role="doctor" if recipient else "department_coordinator",
+                recipient_role=(recipient_membership.role if recipient_membership else "department_coordinator"),
                 appointment=None,
                 ticket=ticket,
-                event_type="appointment.reassignment_requested",
+                event_type="reassignment.requested",
                 title="Specialist review needed",
-                body="No eligible verified doctor was available for the requested routed appointment slot.",
-                payload={"ticket_id": str(ticket.id), "specialty_id": specialty_id, "hospital_id": str(destination_tenant_id)},
+                body="No eligible verified on-duty clinician was available for the routed appointment slot.",
+                payload={"ticket_id": str(ticket.id), "specialty_id": specialty_id, "hospital_id": str(destination_tenant_id), "department_id": department_id},
+                recipient_membership_id=recipient_membership.id if recipient_membership else None,
+                hospital_id=destination_tenant_id,
+                department_id=department_id,
             )
         await session.commit()
-        await broadcast_appointment_event(destination_tenant_id, "appointment.reassignment_requested", {"ticket_id": str(ticket.id), "specialty_id": specialty_id})
-        raise HTTPException(status_code=409, detail="No eligible verified doctor is available at the routed hospital for this specialty and slot")
-
+        await broadcast_appointment_event(destination_tenant_id, "reassignment.requested", {"ticket_id": str(ticket.id), "specialty_id": specialty_id, "department_id": department_id})
+        raise HTTPException(status_code=409, detail="No eligible verified on-duty clinician is available in the routed hospital department for this specialty and slot")
     slot, provider, doctor, membership = row
     day_start = datetime.combine(slot.starts_at.date(), time.min, tzinfo=slot.starts_at.tzinfo or UTC)
     day_end = day_start + timedelta(days=1)
@@ -1018,7 +1314,7 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
             payload={"ticket_id": str(ticket.id), "doctor_id": str(doctor.id), "specialty_id": specialty_id},
         )
         await session.commit()
-        await broadcast_appointment_event(destination_tenant_id, "appointment.reassignment_requested", {"ticket_id": str(ticket.id), "doctor_id": str(doctor.id), "specialty_id": specialty_id})
+        await broadcast_appointment_event(destination_tenant_id, "appointment.reassignment_requested", {"ticket_id": str(ticket.id), "doctor_id": str(doctor.id), "specialty_id": specialty_id, "department_id": department_id})
         raise HTTPException(status_code=409, detail="Eligible doctor capacity has been reached at the routed hospital")
 
     slot.is_booked = True
@@ -1026,8 +1322,10 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
     appointment = Appointment(
         tenant_id=destination_tenant_id,
         hospital_id=destination_tenant_id,
+        department_id=department_id,
         ticket_id=ticket.id,
         doctor_id=doctor.id,
+        staff_membership_id=membership.id,
         specialty_id=membership.specialty_id,
         slot_id=slot.id,
         customer_phone=payload.customer_phone,
@@ -1045,7 +1343,9 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
         "starts_at": slot.starts_at.isoformat(),
         "ends_at": slot.ends_at.isoformat(),
         "hospital_id": str(destination_tenant_id),
+        "department_id": department_id,
         "doctor_id": str(doctor.id),
+        "staff_membership_id": str(membership.id),
         "specialty_id": membership.specialty_id,
         "urgency": ticket.urgency_level,
         "room_label": provider.room_label,
@@ -1062,6 +1362,9 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
         title="New appointment assigned",
         body=f"{membership.specialty_id} appointment at {provider.room_label}",
         payload=response_payload,
+        recipient_membership_id=membership.id,
+        hospital_id=destination_tenant_id,
+        department_id=department_id,
     )
     await create_appointment_notification(
         session,
@@ -1084,10 +1387,32 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
     return response
 @router.get("/appointments", response_model=list[AppointmentResponse])
 async def staff_appointments(request: Request, session: AsyncSession = Depends(get_db)) -> list[AppointmentResponse]:
-    account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "admin"})
-    query = select(Appointment).where(Appointment.hospital_id == account.tenant_id, Appointment.status == "BOOKED")
+    account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "department_coordinator", "admin"})
+    memberships = await active_staff_memberships(session, account)
+    membership_ids = [membership.id for membership in memberships]
+    workspace_pairs = {(membership.hospital_id, membership.department_id) for membership in memberships}
     if account.role in {"doctor", "specialist"}:
-        query = query.where(Appointment.doctor_id == account.id)
+        query = select(Appointment).where(
+            Appointment.hospital_id.in_([hospital_id for hospital_id, _department_id in workspace_pairs] or [account.tenant_id]),
+            or_(Appointment.doctor_id == account.id, Appointment.staff_membership_id.in_(membership_ids) if membership_ids else False),
+        )
+    elif account.role == "nurse":
+        if not workspace_pairs:
+            raise HTTPException(status_code=403, detail="No verified active nurse workspace")
+        query = select(Appointment).where(
+            or_(*[Appointment.hospital_id == hospital_id for hospital_id, _department_id in workspace_pairs]),
+            or_(*[Appointment.department_id == department_id for _hospital_id, department_id in workspace_pairs]),
+            Appointment.status == "BOOKED",
+        )
+    elif account.role == "department_coordinator":
+        if not workspace_pairs:
+            raise HTTPException(status_code=403, detail="No verified active coordinator workspace")
+        query = select(Appointment).where(
+            or_(*[Appointment.hospital_id == hospital_id for hospital_id, _department_id in workspace_pairs]),
+            or_(*[Appointment.department_id == department_id for _hospital_id, department_id in workspace_pairs]),
+        )
+    else:
+        query = select(Appointment).where(Appointment.hospital_id == account.tenant_id)
     result = await session.execute(query.order_by(Appointment.created_at.asc()))
     return [await appointment_response(session, appointment) for appointment in result.scalars().all()]
 @router.get("/patient/appointments", response_model=list[AppointmentResponse])
@@ -1217,7 +1542,7 @@ async def cancel_appointment(appointment_id: str, request: Request, session: Asy
     ticket = await session.get(Ticket, appointment.ticket_id)
     if ticket:
         ticket.appointment_slot = None
-        await create_appointment_notification(session, tenant_id=appointment.hospital_id, recipient_account_id=appointment.doctor_id, recipient_role="doctor", appointment=appointment, ticket=ticket, event_type="appointment.cancelled", title="Appointment cancelled", body="An assigned appointment was cancelled.", payload={"appointment_id": str(appointment.id), "ticket_id": str(ticket.id)})
+        await create_appointment_notification(session, tenant_id=appointment.hospital_id, recipient_account_id=appointment.doctor_id, recipient_role="doctor", appointment=appointment, ticket=ticket, event_type="appointment.cancelled", title="Appointment cancelled", body="An assigned appointment was cancelled.", payload={"appointment_id": str(appointment.id), "ticket_id": str(ticket.id)}, recipient_membership_id=appointment.staff_membership_id, hospital_id=appointment.hospital_id, department_id=appointment.department_id)
     await write_audit_log(session, AuditAction.APPOINTMENT_CANCELLED, actor_id=str(account.id), actor_type=account.role.upper(), tenant_id=str(appointment.hospital_id), ip_address=request.client.host if request.client else "127.0.0.1", resource_type="Appointment", resource_id=str(appointment.id))
     await session.commit()
     await apply_tenant_context(session, appointment.hospital_id)
@@ -1283,23 +1608,27 @@ async def accept_unassigned_appointment(appointment_id: str, request: Request, s
         .where(ProviderSlot.id == appointment.slot_id, ProviderSlot.tenant_id == appointment.hospital_id)
         .with_for_update()
     )).one()
-    membership = await session.scalar(select(HospitalDoctorMembership).where(
-        HospitalDoctorMembership.hospital_id == appointment.hospital_id,
-        HospitalDoctorMembership.doctor_id == account.id,
-        HospitalDoctorMembership.specialty_id == appointment.specialty_id,
-        HospitalDoctorMembership.is_active.is_(True),
-        HospitalDoctorMembership.verification_status == "VERIFIED",
-        HospitalDoctorMembership.employment_status == "ACTIVE",
+    membership = await session.scalar(select(StaffMembership).where(
+        StaffMembership.hospital_id == appointment.hospital_id,
+        StaffMembership.department_id == appointment.department_id,
+        StaffMembership.user_id == account.id,
+        StaffMembership.role.in_(["doctor", "specialist"]),
+        StaffMembership.specialty_id == appointment.specialty_id,
+        StaffMembership.is_active.is_(True),
+        StaffMembership.is_on_duty.is_(True),
+        StaffMembership.verification_status == "VERIFIED",
+        StaffMembership.employment_status == "ACTIVE",
     ))
     if not membership or not account.is_active or provider.specialty != appointment.specialty_id or slot.is_locked or slot.is_booked:
         raise HTTPException(status_code=403, detail="Doctor is not eligible to accept this appointment")
     appointment.doctor_id = account.id
+    appointment.staff_membership_id = membership.id
     appointment.status = "BOOKED"
     slot.is_booked = True
     ticket = await session.get(Ticket, appointment.ticket_id)
     if ticket:
         ticket.appointment_slot = appointment.starts_at or slot.starts_at
-        await create_appointment_notification(session, tenant_id=appointment.hospital_id, recipient_account_id=account.id, recipient_role="doctor", appointment=appointment, ticket=ticket, event_type="appointment.assigned", title="Appointment accepted", body="You accepted this appointment.", payload={"appointment_id": str(appointment.id), "ticket_id": str(ticket.id)})
+        await create_appointment_notification(session, tenant_id=appointment.hospital_id, recipient_account_id=account.id, recipient_role="doctor", appointment=appointment, ticket=ticket, event_type="appointment.assigned", title="Appointment accepted", body="You accepted this appointment.", payload={"appointment_id": str(appointment.id), "ticket_id": str(ticket.id)}, recipient_membership_id=membership.id, hospital_id=appointment.hospital_id, department_id=appointment.department_id)
     await session.commit()
     response = await appointment_response(session, appointment)
     await broadcast_appointment_event(appointment.hospital_id, "appointment.assigned", response.model_dump(), account.id)
@@ -1383,12 +1712,14 @@ async def patient_triage(request: Request, session: AsyncSession = Depends(get_d
 @router.get("/notifications")
 async def notifications(request: Request, session: AsyncSession = Depends(get_db)) -> list[dict[str, Any]]:
     account = await require_account(request, session)
+    memberships = await active_staff_memberships(session, account) if account.role != "patient" else []
+    membership_ids = [membership.id for membership in memberships]
+    notification_filters = [Notification.recipient_user_id == account.id, Notification.recipient_account_id == account.id]
+    if membership_ids:
+        notification_filters.append(Notification.recipient_membership_id.in_(membership_ids))
     stored_notifications = list((await session.execute(
         select(Notification)
-        .where(
-            Notification.tenant_id == account.tenant_id,
-            or_(Notification.recipient_account_id == account.id, Notification.recipient_account_id.is_(None)),
-        )
+        .where(Notification.tenant_id == account.tenant_id, or_(*notification_filters))
         .order_by(Notification.created_at.desc())
         .limit(20)
     )).scalars().all())
@@ -1396,10 +1727,15 @@ async def notifications(request: Request, session: AsyncSession = Depends(get_db
         {
             "id": str(notification.id),
             "recipient_type": notification.recipient_role.upper(),
-            "recipient_id": str(notification.recipient_account_id) if notification.recipient_account_id else None,
+            "recipient_id": str(notification.recipient_user_id or notification.recipient_account_id) if (notification.recipient_user_id or notification.recipient_account_id) else None,
+            "recipient_membership_id": str(notification.recipient_membership_id) if notification.recipient_membership_id else None,
+            "hospital_id": str(notification.hospital_id) if notification.hospital_id else None,
+            "department_id": notification.department_id,
             "title": notification.title,
             "body": notification.body or "",
+            "priority": notification.priority,
             "is_read": notification.is_read,
+            "read_at": notification.read_at,
             "ticket_id": str(notification.ticket_id) if notification.ticket_id else None,
             "appointment_id": str(notification.appointment_id) if notification.appointment_id else None,
             "type": notification.event_type,
@@ -1410,16 +1746,38 @@ async def notifications(request: Request, session: AsyncSession = Depends(get_db
     ticket_query = select(Ticket)
     if account.role == "patient":
         ticket_query = ticket_query.where(Ticket.customer_phone == account.phone)
+    elif memberships:
+        visible_pairs = {(membership.hospital_id, membership.department_id) for membership in memberships}
+        ticket_query = ticket_query.where(
+            or_(*[ticket_visible_to_tenant(hospital_id) for hospital_id, _department_id in visible_pairs]),
+            or_(*[Ticket.assigned_specialty == department_id for _hospital_id, department_id in visible_pairs]),
+        )
     else:
-        ticket_query = ticket_query.where(ticket_visible_to_tenant(account.tenant_id))
+        ticket_query = ticket_query.where(False)
     tickets = list((await session.execute(ticket_query.order_by(Ticket.created_at.desc()).limit(20))).scalars().all())
     marker_prefix = f"{account.id}:"
     markers = list((await session.execute(select(OperationalRecord).where(OperationalRecord.tenant_id == account.tenant_id, OperationalRecord.entity == "notification", OperationalRecord.resource == "read", OperationalRecord.title.like(f"{marker_prefix}%")))).scalars().all())
     read_ids = {marker.title.removeprefix(marker_prefix) for marker in markers}
-    rows.extend({"id": str(ticket.id), "recipient_type": "PATIENT" if account.role == "patient" else "SPECIALIST", "recipient_id": str(account.id), "title": f"Queue update · {ticket.ticket_number}", "body": f"{ticket.queue_status.replace('_', ' ').title()} · {ticket.assigned_specialty or 'Front Desk'}", "is_read": str(ticket.id) in read_ids, "ticket_id": str(ticket.id), "urgency_level": ticket.urgency_level, "condition_name": ticket.matched_condition_id, "type": "QUEUE_UPDATE", "created_at": ticket.created_at} for ticket in tickets)
+    rows.extend({"id": str(ticket.id), "recipient_type": "PATIENT" if account.role == "patient" else account.role.upper(), "recipient_id": str(account.id), "title": f"Queue update · {ticket.ticket_number}", "body": f"{ticket.queue_status.replace('_', ' ').title()} · {ticket.assigned_specialty or 'Front Desk'}", "is_read": str(ticket.id) in read_ids, "ticket_id": str(ticket.id), "urgency_level": ticket.urgency_level, "condition_name": ticket.matched_condition_id, "type": "QUEUE_UPDATE", "created_at": ticket.created_at} for ticket in tickets)
     return sorted(rows, key=lambda row: row["created_at"], reverse=True)
-async def mark_notification(session: AsyncSession, account: AuthAccount, ticket_id: str) -> None:
-    title = f"{account.id}:{ticket_id}"
+
+async def mark_notification(session: AsyncSession, account: AuthAccount, notification_id: str) -> None:
+    try:
+        parsed_id = uuid.UUID(notification_id)
+    except ValueError:
+        parsed_id = None
+    if parsed_id:
+        memberships = await active_staff_memberships(session, account) if account.role != "patient" else []
+        membership_ids = [membership.id for membership in memberships]
+        filters = [Notification.recipient_user_id == account.id, Notification.recipient_account_id == account.id]
+        if membership_ids:
+            filters.append(Notification.recipient_membership_id.in_(membership_ids))
+        notification = await session.scalar(select(Notification).where(Notification.id == parsed_id, or_(*filters)).with_for_update())
+        if notification:
+            notification.is_read = True
+            notification.read_at = utc_now()
+            return
+    title = f"{account.id}:{notification_id}"
     exists = await session.scalar(select(OperationalRecord).where(OperationalRecord.tenant_id == account.tenant_id, OperationalRecord.entity == "notification", OperationalRecord.resource == "read", OperationalRecord.title == title))
     if not exists:
         session.add(OperationalRecord(tenant_id=account.tenant_id, entity="notification", resource="read", title=title, description="Notification read marker", status="READ"))
@@ -1427,32 +1785,17 @@ async def mark_notification(session: AsyncSession, account: AuthAccount, ticket_
 @router.patch("/notifications/read-all")
 async def mark_all_notifications_read(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, bool]:
     account = await require_account(request, session)
-    ticket_query = select(Ticket.id)
-    if account.role == "patient":
-        ticket_query = ticket_query.where(Ticket.customer_phone == account.phone)
-    else:
-        ticket_query = ticket_query.where(ticket_visible_to_tenant(account.tenant_id))
-    ticket_ids = (await session.execute(ticket_query)).scalars().all()
-    for ticket_id in ticket_ids:
-        await mark_notification(session, account, str(ticket_id))
+    for row in await notifications(request, session):
+        await mark_notification(session, account, row["id"])
     await session.commit()
     return {"ok": True}
 
 @router.patch("/notifications/{notification_id}/read")
 async def mark_notification_read(notification_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, bool]:
     account = await require_account(request, session)
-    ticket_query = select(Ticket).where(Ticket.id == uuid.UUID(notification_id))
-    if account.role == "patient":
-        ticket_query = ticket_query.where(Ticket.customer_phone == account.phone)
-    else:
-        ticket_query = ticket_query.where(ticket_visible_to_tenant(account.tenant_id))
-    ticket = await session.scalar(ticket_query)
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Notification not found")
     await mark_notification(session, account, notification_id)
     await session.commit()
     return {"ok": True}
-
 OPERATIONAL_RESOURCES = {
     "dashboard", "queue", "people", "doctors", "specialists", "appointments", "analytics",
     "notifications", "settings", "schedule", "patients", "visits", "vitals", "care-plans", "departments",

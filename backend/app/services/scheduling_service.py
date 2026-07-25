@@ -6,8 +6,27 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import AuthAccount, HospitalDoctorMembership, Provider, ProviderSlot
+from app.models import AuthAccount, HospitalDepartment, HospitalDoctorMembership, Provider, ProviderSlot, StaffMembership
 from app.services.auth_service import apply_tenant_context
+
+
+def department_code(name: str) -> str:
+    return name.strip().lower().replace(" ", "-") or "department"
+
+
+async def ensure_department(db: AsyncSession, tenant_id: UUID, name: str) -> None:
+    existing = await db.scalar(select(HospitalDepartment).where(HospitalDepartment.hospital_id == tenant_id, HospitalDepartment.code == department_code(name)))
+    if not existing:
+        db.add(HospitalDepartment(hospital_id=tenant_id, name=name, code=department_code(name), description=f"{name} department", status="ACTIVE", capacity=12))
+
+
+async def ensure_doctor_memberships(db: AsyncSession, tenant_id: UUID, doctor: AuthAccount, provider: Provider) -> None:
+    doctor_membership = await db.scalar(select(HospitalDoctorMembership).where(HospitalDoctorMembership.hospital_id == tenant_id, HospitalDoctorMembership.doctor_id == doctor.id, HospitalDoctorMembership.specialty_id == provider.specialty))
+    if not doctor_membership:
+        db.add(HospitalDoctorMembership(hospital_id=tenant_id, doctor_id=doctor.id, specialty_id=provider.specialty, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, active_from=datetime.now(UTC) - timedelta(days=1)))
+    staff_membership = await db.scalar(select(StaffMembership).where(StaffMembership.hospital_id == tenant_id, StaffMembership.user_id == doctor.id, StaffMembership.department_id == provider.specialty, StaffMembership.role == "doctor"))
+    if not staff_membership:
+        db.add(StaffMembership(user_id=doctor.id, hospital_id=tenant_id, department_id=provider.specialty, role="doctor", specialty_id=provider.specialty, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, is_on_duty=True, daily_capacity=provider.max_daily_capacity, active_from=datetime.now(UTC) - timedelta(days=1)))
 
 
 async def seed_demo_schedule(db: AsyncSession, tenant_id: UUID) -> None:
@@ -15,16 +34,16 @@ async def seed_demo_schedule(db: AsyncSession, tenant_id: UUID) -> None:
     existing = await db.scalar(select(Provider.id).where(Provider.tenant_id == tenant_id).limit(1))
     doctor = await db.scalar(select(AuthAccount).where(AuthAccount.tenant_id == tenant_id, AuthAccount.role == "doctor", AuthAccount.is_active.is_(True)).limit(1))
     if existing:
-        if doctor:
-            providers = list((await db.execute(select(Provider).where(Provider.tenant_id == tenant_id))).scalars().all())
-            for provider in providers:
+        providers = list((await db.execute(select(Provider).where(Provider.tenant_id == tenant_id))).scalars().all())
+        for provider in providers:
+            await ensure_department(db, tenant_id, provider.specialty)
+            if doctor:
                 if provider.doctor_id is None:
                     provider.doctor_id = doctor.id
-                membership = await db.scalar(select(HospitalDoctorMembership).where(HospitalDoctorMembership.hospital_id == tenant_id, HospitalDoctorMembership.doctor_id == doctor.id, HospitalDoctorMembership.specialty_id == provider.specialty))
-                if not membership:
-                    db.add(HospitalDoctorMembership(hospital_id=tenant_id, doctor_id=doctor.id, specialty_id=provider.specialty, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, active_from=datetime.now(UTC) - timedelta(days=1)))
-            await db.commit()
+                await ensure_doctor_memberships(db, tenant_id, doctor, provider)
+        await db.commit()
         return
+
     providers = [
         Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name="Demo General Medicine Doctor", specialty="General Medicine", room_label="Room 2"),
         Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name="Demo Pediatrics Doctor", specialty="Pediatrics", room_label="Room 4"),
@@ -32,17 +51,11 @@ async def seed_demo_schedule(db: AsyncSession, tenant_id: UUID) -> None:
     ]
     db.add_all(providers)
     await db.flush()
-    if doctor:
-        for provider in providers:
-            db.add(HospitalDoctorMembership(
-                hospital_id=tenant_id,
-                doctor_id=doctor.id,
-                specialty_id=provider.specialty,
-                verification_status="VERIFIED",
-                employment_status="ACTIVE",
-                is_active=True,
-                active_from=datetime.now(UTC) - timedelta(days=1),
-            ))
+    for provider in providers:
+        await ensure_department(db, tenant_id, provider.specialty)
+        if doctor:
+            await ensure_doctor_memberships(db, tenant_id, doctor, provider)
+
     first_day = datetime.combine(datetime.now(UTC).date() + timedelta(days=1), time(hour=8), tzinfo=UTC)
     for day_offset in range(5):
         for provider_index, provider in enumerate(providers):

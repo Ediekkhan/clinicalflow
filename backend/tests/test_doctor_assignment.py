@@ -5,14 +5,14 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models import Appointment, AuthAccount, HospitalDoctorMembership, Provider, ProviderSlot, Tenant, Ticket
+from app.models import Appointment, AuthAccount, HospitalDoctorMembership, Provider, ProviderSlot, StaffMembership, Tenant, Ticket
 from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, create_session, hash_password
 
 PHONE = "+2348091111111"
 PASSWORD = "Password123!"
 
 
-async def seed_case(*, specialty="General Medicine", doctor_active=True, verified=True, active_from_offset=-1, provider_specialty=None, provider_has_doctor=True, booked=False, capacity=12):
+async def seed_case(*, specialty="General Medicine", doctor_active=True, verified=True, active_from_offset=-1, provider_specialty=None, provider_has_doctor=True, booked=False, capacity=12, on_duty=True):
     suffix = uuid4().hex[:8]
     now = datetime.now(UTC)
     async with app.state.session_factory() as session:
@@ -26,7 +26,9 @@ async def seed_case(*, specialty="General Medicine", doctor_active=True, verifie
         await session.flush()
         if verified is not None:
             session.add(HospitalDoctorMembership(hospital_id=hospital.id, doctor_id=doctor.id, specialty_id=specialty, verification_status="VERIFIED" if verified else "PENDING", employment_status="ACTIVE", is_active=True, active_from=now + timedelta(days=active_from_offset)))
+            session.add(StaffMembership(user_id=doctor.id, hospital_id=hospital.id, department_id=specialty, role="doctor", specialty_id=specialty, verification_status="VERIFIED" if verified else "PENDING", employment_status="ACTIVE", is_active=True, is_on_duty=on_duty, active_from=now + timedelta(days=active_from_offset)))
         session.add(HospitalDoctorMembership(hospital_id=other_hospital.id, doctor_id=other_doctor.id, specialty_id=specialty, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, active_from=now - timedelta(days=1)))
+        session.add(StaffMembership(user_id=other_doctor.id, hospital_id=other_hospital.id, department_id=specialty, role="doctor", specialty_id=specialty, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, is_on_duty=True, active_from=now - timedelta(days=1)))
         provider = Provider(tenant_id=hospital.id, doctor_id=doctor.id if provider_has_doctor else None, full_name=f"Provider {suffix}", specialty=provider_specialty or specialty, room_label="Room A", max_daily_capacity=capacity, is_active=True)
         other_provider = Provider(tenant_id=other_hospital.id, doctor_id=other_doctor.id, full_name=f"Other Provider {suffix}", specialty=specialty, room_label="Room B", max_daily_capacity=capacity, is_active=True)
         session.add_all([provider, other_provider])
@@ -79,6 +81,7 @@ def test_cross_hospital_wrong_specialty_inactive_unverified_off_duty_and_booked_
         ({"doctor_active": False}, "slot"),
         ({"verified": False}, "slot"),
         ({"active_from_offset": 2}, "slot"),
+        ({"on_duty": False}, "slot"),
         ({"booked": True}, "slot"),
     ]
     with TestClient(app) as client:
@@ -92,12 +95,12 @@ def test_eligible_doctor_gets_unassigned_request_and_first_accept_locks_assignme
         fixture = asyncio.run(seed_case(provider_has_doctor=False))
         assert book(client, fixture).status_code == 409
         use_session(client, fixture["doctor_tokens"])
-        assert any(row["type"] == "appointment.reassignment_requested" for row in client.get("/api/v1/notifications").json())
+        assert any(row["type"] == "reassignment.requested" for row in client.get("/api/v1/notifications").json())
 
         async def create_unassigned():
             async with app.state.session_factory() as session:
                 slot = await session.get(ProviderSlot, fixture["slot"])
-                appointment = Appointment(tenant_id=fixture["hospital"], hospital_id=fixture["hospital"], ticket_id=fixture["ticket"], doctor_id=None, specialty_id=fixture["specialty"], slot_id=fixture["slot"], customer_phone=PHONE, urgency="URGENT", starts_at=slot.starts_at, ends_at=slot.ends_at, status="AWAITING_CLINICAL_REVIEW")
+                appointment = Appointment(tenant_id=fixture["hospital"], hospital_id=fixture["hospital"], department_id=fixture["specialty"], ticket_id=fixture["ticket"], doctor_id=None, specialty_id=fixture["specialty"], slot_id=fixture["slot"], customer_phone=PHONE, urgency="URGENT", starts_at=slot.starts_at, ends_at=slot.ends_at, status="AWAITING_CLINICAL_REVIEW")
                 session.add(appointment)
                 await session.commit()
                 return appointment.id

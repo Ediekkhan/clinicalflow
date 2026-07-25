@@ -73,6 +73,7 @@ class AuthSession(Base):
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     account_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=False, index=True)
     tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    selected_membership_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("staff_memberships.id"), nullable=True, index=True)
     access_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     refresh_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
     access_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -196,6 +197,89 @@ class HospitalDoctorMembership(Base):
     active_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     active_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+class HospitalDepartment(Base):
+    __tablename__ = "hospital_departments"
+    __table_args__ = (
+        UniqueConstraint("hospital_id", "code", name="uq_hospital_department_code"),
+        Index("ix_hospital_departments_hospital_status", "hospital_id", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    hospital_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
+    coordinator_membership_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("staff_memberships.id"), nullable=True)
+    capacity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+
+class ProviderAvailability(Base):
+    __tablename__ = "provider_availability"
+    __table_args__ = (
+        Index("ix_provider_availability_membership_start", "membership_id", "starts_at"),
+        Index("ix_provider_availability_hospital_department", "hospital_id", "department_id", "status"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    membership_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("staff_memberships.id"), nullable=False)
+    hospital_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    department_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="AVAILABLE")
+    maximum_appointments: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
+    booked_appointments: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+class StaffMembership(Base):
+    __tablename__ = "staff_memberships"
+    __table_args__ = (
+        UniqueConstraint("user_id", "hospital_id", "department_id", "role", name="uq_staff_membership_workspace_role"),
+        Index("ix_staff_memberships_user", "user_id"),
+        Index("ix_staff_memberships_hospital_department", "hospital_id", "department_id"),
+        Index("ix_staff_memberships_assignment", "hospital_id", "department_id", "specialty_id", "role"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=False)
+    hospital_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    department_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    specialty_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    professional_license_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    employment_status: Mapped[str] = mapped_column(String(32), nullable=False, default="ACTIVE")
+    notification_preferences: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_on_duty: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    daily_capacity: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
+    active_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    active_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+class StaffInvitation(Base):
+    __tablename__ = "staff_invitations"
+    __table_args__ = (
+        UniqueConstraint("invitation_code", name="uq_staff_invitations_code"),
+        Index("ix_staff_invitations_hospital_department", "hospital_id", "department_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    hospital_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    department_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    permitted_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    invitation_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    invited_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_account_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
 class Appointment(Base):
     __tablename__ = "appointments"
     __table_args__ = (
@@ -207,8 +291,10 @@ class Appointment(Base):
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
     hospital_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False, index=True)
+    department_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     ticket_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tickets.id"), nullable=False)
     doctor_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True, index=True)
+    staff_membership_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("staff_memberships.id"), nullable=True, index=True)
     specialty_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     slot_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("provider_slots.id"), nullable=False)
     customer_phone: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -268,6 +354,10 @@ class Notification(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    recipient_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    recipient_membership_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("staff_memberships.id"), nullable=True)
+    hospital_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=True)
+    department_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     recipient_account_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
     recipient_role: Mapped[str] = mapped_column(String(32), nullable=False)
     appointment_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("appointments.id"), nullable=True)
@@ -276,7 +366,9 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[str] = mapped_column(String(32), nullable=False, default="NORMAL")
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 class OperationalRecord(Base):

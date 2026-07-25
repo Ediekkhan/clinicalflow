@@ -28,17 +28,25 @@ def test_initial_migration_builds_clean_sqlite_schema(tmp_path: Path) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
 
-    assert {"tenants", "staff", "auth_accounts", "auth_sessions", "tickets", "audit_logs", "demo_requests", "providers", "provider_slots", "appointments", "client_mutations", "hospital_doctor_memberships", "notifications"} <= tables
-    assert revision == ("20260716_0012",)
+    assert {"tenants", "staff", "auth_accounts", "auth_sessions", "tickets", "audit_logs", "demo_requests", "providers", "provider_slots", "appointments", "client_mutations", "hospital_doctor_memberships", "staff_memberships", "staff_invitations", "hospital_departments", "provider_availability", "notifications"} <= tables
+    assert revision == ("20260716_0014",)
     with sqlite3.connect(database) as connection:
         ticket_columns = {row[1] for row in connection.execute("PRAGMA table_info(tickets)")}
         tenant_columns = {row[1] for row in connection.execute("PRAGMA table_info(tenants)")}
         provider_columns = {row[1] for row in connection.execute("PRAGMA table_info(providers)")}
         appointment_columns = {row[1] for row in connection.execute("PRAGMA table_info(appointments)")}
+        membership_columns = {row[1] for row in connection.execute("PRAGMA table_info(staff_memberships)")}
+        notification_columns = {row[1] for row in connection.execute("PRAGMA table_info(notifications)")}
+        department_columns = {row[1] for row in connection.execute("PRAGMA table_info(hospital_departments)")}
+        availability_columns = {row[1] for row in connection.execute("PRAGMA table_info(provider_availability)")}
     assert {"raw_intake_text", "extracted_symptoms", "patient_latitude", "patient_longitude", "routed_tenant_id", "route_distance_km"} <= ticket_columns
     assert {"latitude", "longitude", "accepts_patients"} <= tenant_columns
     assert {"doctor_id", "max_daily_capacity"} <= provider_columns
-    assert {"hospital_id", "doctor_id", "specialty_id", "urgency", "starts_at", "ends_at"} <= appointment_columns
+    assert {"hospital_id", "department_id", "doctor_id", "staff_membership_id", "specialty_id", "urgency", "starts_at", "ends_at"} <= appointment_columns
+    assert {"user_id", "hospital_id", "department_id", "role", "specialty_id", "verification_status", "employment_status", "is_on_duty", "daily_capacity"} <= membership_columns
+    assert {"recipient_user_id", "recipient_membership_id", "hospital_id", "department_id", "priority", "read_at"} <= notification_columns
+    assert {"hospital_id", "name", "code", "status", "coordinator_membership_id", "capacity"} <= department_columns
+    assert {"membership_id", "hospital_id", "department_id", "starts_at", "ends_at", "status", "maximum_appointments", "booked_appointments"} <= availability_columns
 
 
 def test_postgresql_offline_migration_contains_rls_policies() -> None:
@@ -61,7 +69,11 @@ def test_postgresql_offline_migration_contains_rls_policies() -> None:
     for table in ("consultation_notes", "specialist_messages"):
         assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in sql
     assert "ALTER TABLE operational_records ENABLE ROW LEVEL SECURITY" in sql
-    assert sql.count("CREATE POLICY tenant_isolation_policy") == 14
+    assert "ALTER TABLE staff_memberships ENABLE ROW LEVEL SECURITY" in sql
+    assert "ALTER TABLE staff_invitations ENABLE ROW LEVEL SECURITY" in sql
+    assert "ALTER TABLE hospital_departments ENABLE ROW LEVEL SECURITY" in sql
+    assert "ALTER TABLE provider_availability ENABLE ROW LEVEL SECURITY" in sql
+    assert sql.count("CREATE POLICY tenant_isolation_policy") == 18
     assert "WITH CHECK" in sql
     assert 'DROP POLICY IF EXISTS tenant_isolation_policy ON "tickets"' in sql
     assert "OR routed_tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid" in sql
