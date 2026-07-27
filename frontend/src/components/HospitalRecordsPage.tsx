@@ -39,6 +39,32 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 
+function normalizeDepartment(value: unknown): HospitalDepartment {
+  const department = (value ?? {}) as Partial<HospitalDepartment>;
+  return {
+    id: department.id ?? '',
+    name: department.name ?? 'Unnamed department',
+    code: department.code ?? '',
+    description: department.description ?? null,
+    status: department.status ?? 'UNKNOWN',
+    coordinator: department.coordinator ?? null,
+    total_doctors: Number(department.total_doctors ?? 0),
+    available_doctors: Number(department.available_doctors ?? 0),
+    specialists_on_duty: Number(department.specialists_on_duty ?? 0),
+    nurses_on_duty: Number(department.nurses_on_duty ?? 0),
+    patients_waiting: Number(department.patients_waiting ?? 0),
+    appointments_today: Number(department.appointments_today ?? 0),
+    average_wait_time_minutes: department.average_wait_time_minutes ?? null,
+    capacity_status: department.capacity_status ?? 'UNKNOWN',
+    available_doctors_list: Array.isArray(department.available_doctors_list) ? department.available_doctors_list : [],
+  };
+}
+
+function listItems<T>(response: { items?: T[] } | T[] | null | undefined): T[] {
+  if (Array.isArray(response)) return response;
+  if (response && Array.isArray(response.items)) return response.items;
+  return [];
+}
 function rowText(row: Row) {
   return JSON.stringify(row).toLowerCase();
 }
@@ -90,7 +116,8 @@ export function HospitalRecordsPage({ mode, title, subtitle }: { mode: Mode; tit
     setError(null);
     try {
       const response = mode === 'queue' ? await listHospitalPatients() : mode === 'specialists' ? await listHospitalSpecialists() : await listHospitalDepartments();
-      setRows(response.items as Row[]);
+      const records = listItems<Row>(response as { items?: Row[] } | Row[]);
+      setRows(mode === 'departments' ? records.map(normalizeDepartment) : records);
     } catch (err) {
       setRows([]);
       setError(err instanceof Error ? err.message : 'Unable to load hospital records.');
@@ -177,7 +204,21 @@ export function HospitalRecordsPage({ mode, title, subtitle }: { mode: Mode; tit
             <article key={item.id} className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="flex items-start justify-between gap-3"><div><p className="text-lg font-bold text-slate-950">{item.name}</p><p className="text-sm text-slate-500">{item.description ?? 'Department operations'}</p></div><Badge value={item.capacity_status} /></div>
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4"><div><dt className="text-slate-500">Doctors</dt><dd className="font-bold text-slate-900">{item.available_doctors}/{item.total_doctors}</dd></div><div><dt className="text-slate-500">Nurses</dt><dd className="font-bold text-slate-900">{item.nurses_on_duty}</dd></div><div><dt className="text-slate-500">Waiting</dt><dd className="font-bold text-slate-900">{item.patients_waiting}</dd></div><div><dt className="text-slate-500">Today</dt><dd className="font-bold text-slate-900">{item.appointments_today}</dd></div></dl>
-              {item.available_doctors_list.length > 0 ? <div className="mt-4 space-y-2">{item.available_doctors_list.slice(0, 3).map((doctor) => <div key={doctor.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="font-bold text-slate-800">{doctor.full_name}</span><Badge value={doctor.availability} /></div>)}</div> : null}
+              {(() => {
+                const availableDoctors = Array.isArray(item.available_doctors_list) ? item.available_doctors_list : [];
+                return availableDoctors.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {availableDoctors.slice(0, 3).map((doctor) => (
+                      <div key={doctor.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                        <span className="font-bold text-slate-800">{doctor.full_name}</span>
+                        <Badge value={doctor.availability} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 text-sm text-slate-500">No doctors currently available in this department.</p>
+                );
+              })()}
             </article>
           ))}
         </div>

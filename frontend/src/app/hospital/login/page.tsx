@@ -39,7 +39,10 @@ export default function HospitalLoginPage() {
         const sessionRole = typeof session === 'object' && session && 'role' in session ? String(session.role) : role;
         document.cookie = `synaptiverse_role=${encodeURIComponent(sessionRole)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
       }
-      window.location.assign('/hospital/dashboard');
+      const nextPath = new URLSearchParams(window.location.search).get('next');
+      const defaultPath = role === 'doctor' ? '/hospital/doctor/patients' : '/hospital/dashboard';
+      const safeNextPath = nextPath?.startsWith('/hospital/') ? nextPath : defaultPath;
+      window.location.assign(safeNextPath);
     } catch (caught) {
       setServerError(caught instanceof Error ? caught.message : 'Invalid hospital credentials');
     } finally {

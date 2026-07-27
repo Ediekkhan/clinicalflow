@@ -378,8 +378,10 @@ async def get_current_profile(role: str, request: Request) -> AuthProfileRespons
     async with request.app.state.session_factory() as session:
         token = request.cookies.get(ACCESS_COOKIE)
         authenticated = await account_for_access_token(session, token) if token else None
-        if not authenticated or authenticated[0].role != role:
+        if not authenticated:
             raise HTTPException(status_code=401, detail="Authentication required")
+        if authenticated[0].role != role:
+            raise HTTPException(status_code=403, detail="Authenticated account is not authorized for this role")
         return _build_profile(authenticated[0])
 
 @router.post("/auth/refresh", response_model=AuthRefreshResponse)
@@ -446,12 +448,25 @@ async def select_staff_workspace(membership_id: str, request: Request, session: 
     auth_session.selected_membership_id = membership.id
     await session.commit()
     return {"ok": True, "selected_membership_id": str(membership.id), "hospital_id": str(membership.hospital_id), "department_id": membership.department_id}
-@router.get("/hospital/me", response_model=AuthProfileResponse)
-async def hospital_profile(request: Request, session: AsyncSession = Depends(get_db)) -> AuthProfileResponse:
-    account = await require_roles(request, session, {"specialist", "doctor", "nurse", "hospital_admin", "admin"})
-    if account.role not in {"doctor", "nurse", "hospital_admin", "admin"}:
-        raise HTTPException(status_code=403, detail="Hospital staff access required")
-    return _build_profile(account)
+@router.get("/hospital/me")
+async def hospital_profile(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account, membership, tenant = await require_hospital_membership(request, session)
+    profile = _build_profile(account).model_dump()
+    profile.update({
+        "user_id": str(account.id),
+        "membership_id": str(membership.id),
+        "hospital_id": str(membership.hospital_id),
+        "hospital_name": tenant.name if tenant else None,
+        "name": tenant.name if tenant else profile.get("full_name"),
+        "location": tenant.state_location if tenant else None,
+        "department_id": membership.department_id,
+        "department_name": membership.department_id,
+        "role": membership.role,
+        "specialty": membership.specialty_id or profile.get("specialty"),
+        "verification_status": membership.verification_status,
+        "employment_status": membership.employment_status,
+    })
+    return profile
 
 @router.get("/hospital/waiting-room")
 async def hospital_waiting_room(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
@@ -648,7 +663,9 @@ async def hospital_department_available_doctors(department_id: str, request: Req
     match = next((department for department in departments if department["id"] == department_id or department["code"] == department_id or department["name"] == department_id), None)
     if not match:
         raise HTTPException(status_code=404, detail="Department not found")
-    return {"items": [doctor for doctor in match["available_doctors_list"] if doctor["availability"] == "AVAILABLE"]}
+    doctors = match.get("available_doctors_list")
+    available_doctors = doctors if isinstance(doctors, list) else []
+    return {"items": [doctor for doctor in available_doctors if doctor.get("availability") == "AVAILABLE"]}
 
 
 @router.get("/hospital/appointment-slots", response_model=list[SlotResponse])
