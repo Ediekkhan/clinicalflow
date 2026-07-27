@@ -69,7 +69,7 @@ export function TriageChat() {
         const preview = (await api.post('/api/v1/public/triage-preview', payload)) as TriageResponse;
         setResult({
           ...preview,
-          messages: ['I analyzed your symptoms in demo mode.', ...(preview.messages ?? [])],
+          messages: ['I analyzed your symptoms using the public triage service.', ...(preview.messages ?? [])],
         });
       } catch (fallbackError) {
         console.error(fallbackError);

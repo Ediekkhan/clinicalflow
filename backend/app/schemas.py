@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 Channel = Literal["WHATSAPP", "USSD", "WEB", "SMS"]
 UrgencyLevel = Literal["CRITICAL", "URGENT", "ROUTINE"]
@@ -260,3 +260,73 @@ class AppointmentResponse(BaseModel):
     room_label: str
     starts_at: datetime
     ends_at: datetime
+class SignupApplicationCreate(BaseModel):
+    first_name: str | None = Field(default=None, min_length=1, max_length=128)
+    middle_name: str | None = Field(default=None, max_length=128)
+    last_name: str | None = Field(default=None, min_length=1, max_length=128)
+    full_name: str | None = Field(default=None, min_length=2, max_length=255)
+    phone: str | None = Field(default=None, max_length=32)
+    email: str | None = Field(default=None, max_length=255)
+    country: str = Field(min_length=2, max_length=128)
+    region: str | None = Field(default=None, max_length=128)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    confirm_password: str | None = Field(default=None, min_length=8, max_length=128)
+    invitation_token: str | None = Field(default=None, min_length=8, max_length=512)
+    accept_terms: bool
+    accept_privacy: bool
+    marketing_consent: bool = False
+    consent_version: str = Field(default="2026-07", min_length=1, max_length=32)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: str | None) -> str | None:
+        if value is None or not str(value).strip():
+            return None
+        normalized = str(value).strip().lower()
+        if "@" not in normalized or "." not in normalized.rsplit("@", 1)[-1]:
+            raise ValueError("Enter a valid email address")
+        return normalized
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def normalize_international_phone(cls, value: str | None) -> str | None:
+        if value is None or not str(value).strip():
+            return None
+        normalized = "".join(character for character in str(value).strip() if character.isdigit() or character == "+")
+        if not normalized.startswith("+") or not normalized[1:].isdigit() or not 8 <= len(normalized[1:]) <= 15:
+            raise ValueError("Enter a valid international phone number including country code")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_security(self) -> "SignupApplicationCreate":
+        if not self.accept_terms or not self.accept_privacy:
+            raise ValueError("Terms of service and privacy notice must be accepted")
+        if self.password is not None:
+            if self.password != self.confirm_password:
+                raise ValueError("Passwords do not match")
+            if not any(character.isupper() for character in self.password) or not any(character.isdigit() for character in self.password):
+                raise ValueError("Password must include an uppercase letter and a number")
+        return self
+
+
+class SignupApplicationResponse(BaseModel):
+    id: UUID
+    reference: str
+    application_type: str
+    onboarding_type: str
+    status: str
+    submitted_at: datetime
+    login_path: str
+    dashboard_path: str | None = None
+
+
+class SignupVerificationRequest(BaseModel):
+    application_id: UUID
+    code: str = Field(min_length=4, max_length=12)
+
+
+class SignupInvitationValidateRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=512)
+    role: Literal["specialist", "nurse", "government", "platform-admin"]
+    email: str | None = Field(default=None, max_length=255)

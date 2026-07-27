@@ -41,6 +41,7 @@ async def ensure_sqlite_additive_schema(engine) -> None:
         appointment_columns = await conn.run_sync(table_columns, "appointments")
         notification_columns = await conn.run_sync(table_columns, "notifications")
         staff_membership_columns = await conn.run_sync(table_columns, "staff_memberships")
+        staff_invitation_columns = await conn.run_sync(table_columns, "staff_invitations")
         if tenant_columns and "latitude" not in tenant_columns:
             await conn.execute(text("ALTER TABLE tenants ADD COLUMN latitude FLOAT"))
         if tenant_columns and "longitude" not in tenant_columns:
@@ -102,6 +103,13 @@ async def ensure_sqlite_additive_schema(engine) -> None:
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_provider_availability_hospital_department ON provider_availability (hospital_id, department_id, status)"))
         await conn.execute(text("CREATE TABLE IF NOT EXISTS staff_invitations (id CHAR(32) PRIMARY KEY, hospital_id CHAR(32) NOT NULL, department_id VARCHAR(128) NOT NULL, permitted_role VARCHAR(32) NOT NULL, invitation_code VARCHAR(128) NOT NULL UNIQUE, invited_email VARCHAR(255), expires_at DATETIME, accepted_at DATETIME, created_by_account_id CHAR(32), created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_staff_invitations_hospital_department ON staff_invitations (hospital_id, department_id)"))
+        for column_name, column_type in (
+            ("token_hash", "VARCHAR(64)"), ("organization_id", "CHAR(32)"), ("invited_phone", "VARCHAR(32)"),
+            ("intended_role", "VARCHAR(32)"), ("revoked_at", "DATETIME"), ("invited_by", "CHAR(32)"),
+        ):
+            if staff_invitation_columns and column_name not in staff_invitation_columns:
+                await conn.execute(text(f"ALTER TABLE staff_invitations ADD COLUMN {column_name} {column_type}"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_staff_invitations_token_hash ON staff_invitations (token_hash)"))
         await conn.execute(text("CREATE TABLE IF NOT EXISTS notifications (id CHAR(32) PRIMARY KEY, tenant_id CHAR(32) NOT NULL, recipient_account_id CHAR(32), recipient_role VARCHAR(32) NOT NULL, appointment_id CHAR(32), ticket_id CHAR(32), event_type VARCHAR(64) NOT NULL, title VARCHAR(255) NOT NULL, body TEXT, payload_json TEXT, is_read BOOLEAN NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notifications_tenant_recipient ON notifications (tenant_id, recipient_account_id)"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notifications_appointment ON notifications (appointment_id)"))

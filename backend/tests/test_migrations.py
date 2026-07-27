@@ -28,8 +28,8 @@ def test_initial_migration_builds_clean_sqlite_schema(tmp_path: Path) -> None:
         tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()
 
-    assert {"tenants", "staff", "auth_accounts", "auth_sessions", "tickets", "audit_logs", "demo_requests", "providers", "provider_slots", "appointments", "client_mutations", "hospital_doctor_memberships", "staff_memberships", "staff_invitations", "hospital_departments", "provider_availability", "notifications"} <= tables
-    assert revision == ("20260716_0014",)
+    assert {"tenants", "staff", "auth_accounts", "auth_sessions", "tickets", "audit_logs", "demo_requests", "providers", "provider_slots", "appointments", "client_mutations", "hospital_doctor_memberships", "staff_memberships", "staff_invitations", "hospital_departments", "provider_availability", "notifications", "signup_applications", "organization_applications", "professional_credentials", "verification_documents", "consent_records", "application_review_history", "verification_events"} <= tables
+    assert revision == ("20260727_0015",)
     with sqlite3.connect(database) as connection:
         ticket_columns = {row[1] for row in connection.execute("PRAGMA table_info(tickets)")}
         tenant_columns = {row[1] for row in connection.execute("PRAGMA table_info(tenants)")}
@@ -73,6 +73,8 @@ def test_postgresql_offline_migration_contains_rls_policies() -> None:
     assert "ALTER TABLE staff_invitations ENABLE ROW LEVEL SECURITY" in sql
     assert "ALTER TABLE hospital_departments ENABLE ROW LEVEL SECURITY" in sql
     assert "ALTER TABLE provider_availability ENABLE ROW LEVEL SECURITY" in sql
+    for table in ("signup_applications", "organization_applications", "professional_credentials", "verification_documents", "consent_records", "application_review_history", "verification_events"):
+        assert f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" in sql
     assert sql.count("CREATE POLICY tenant_isolation_policy") == 18
     assert "WITH CHECK" in sql
     assert 'DROP POLICY IF EXISTS tenant_isolation_policy ON "tickets"' in sql

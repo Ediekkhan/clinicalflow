@@ -274,12 +274,112 @@ class StaffInvitation(Base):
     department_id: Mapped[str] = mapped_column(String(128), nullable=False)
     permitted_role: Mapped[str] = mapped_column(String(32), nullable=False)
     invitation_code: Mapped[str] = mapped_column(String(128), nullable=False)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    organization_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=True)
     invited_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    invited_phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    intended_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by_account_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    invited_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
+class SignupApplication(Base):
+    __tablename__ = "signup_applications"
+    __table_args__ = (Index("ix_signup_applications_type_status", "application_type", "status"), Index("ix_signup_applications_email", "email"), Index("ix_signup_applications_phone", "phone"))
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    reference: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
+    application_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    onboarding_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="DRAFT")
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    country: Mapped[str] = mapped_column(String(128), nullable=False)
+    organization_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    invitation_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("staff_invitations.id"), nullable=True)
+    account_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    consent_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+class OrganizationApplication(Base):
+    __tablename__ = "organization_applications"
+    __table_args__ = (Index("ix_organization_applications_status", "verification_status"),)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    signup_application_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("signup_applications.id"), nullable=False, unique=True)
+    legal_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    registration_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    licence_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    regulatory_authority: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(64), nullable=False, default="PENDING_VERIFICATION")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+class ProfessionalCredential(Base):
+    __tablename__ = "professional_credentials"
+    __table_args__ = (UniqueConstraint("licence_number", "jurisdiction", name="uq_professional_credential_jurisdiction"), Index("ix_professional_credentials_application", "signup_application_id"))
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    signup_application_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("signup_applications.id"), nullable=False)
+    licence_number: Mapped[str] = mapped_column(String(128), nullable=False)
+    licensing_authority: Mapped[str] = mapped_column(String(255), nullable=False)
+    jurisdiction: Mapped[str] = mapped_column(String(128), nullable=False)
+    specialty: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verification_status: Mapped[str] = mapped_column(String(64), nullable=False, default="PENDING_VERIFICATION")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+class VerificationDocument(Base):
+    __tablename__ = "verification_documents"
+    __table_args__ = (Index("ix_verification_documents_application", "signup_application_id"),)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    signup_application_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("signup_applications.id"), nullable=False)
+    document_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    private_storage_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    verification_status: Mapped[str] = mapped_column(String(64), nullable=False, default="PENDING_VERIFICATION")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+class ConsentRecord(Base):
+    __tablename__ = "consent_records"
+    __table_args__ = (Index("ix_consent_records_application", "signup_application_id"),)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    signup_application_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("signup_applications.id"), nullable=False)
+    account_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    consent_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    accepted: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+class ApplicationReviewHistory(Base):
+    __tablename__ = "application_review_history"
+    __table_args__ = (Index("ix_application_review_history_application", "signup_application_id", "created_at"),)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    signup_application_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("signup_applications.id"), nullable=False)
+    reviewer_account_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    previous_status: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(64), nullable=False)
+    internal_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
+class VerificationEvent(Base):
+    __tablename__ = "verification_events"
+    __table_args__ = (Index("ix_verification_events_application_type", "signup_application_id", "event_type"),)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    signup_application_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("signup_applications.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 class Appointment(Base):
     __tablename__ = "appointments"
     __table_args__ = (

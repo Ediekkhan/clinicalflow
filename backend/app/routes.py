@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import uuid
 from datetime import UTC, datetime, time, timedelta
 from typing import Any
@@ -12,10 +13,10 @@ from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Appointment, AuthAccount, AuthSession, AuditLog, ClientMutation, ConsultationNote, DemoRequest, HospitalDepartment, HospitalDoctorMembership, Notification, OperationalRecord, ProviderAvailability, StaffInvitation, StaffMembership, Provider, ProviderSlot, SpecialistMessage, Ticket, Tenant
-from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
+from app.models import Appointment, ApplicationReviewHistory, AuthAccount, AuthSession, AuditLog, ClientMutation, ConsentRecord, ConsultationNote, DemoRequest, HospitalDepartment, HospitalDoctorMembership, Notification, OperationalRecord, OrganizationApplication, ProfessionalCredential, ProviderAvailability, SignupApplication, StaffInvitation, StaffMembership, Provider, ProviderSlot, SpecialistMessage, Ticket, Tenant, VerificationDocument, VerificationEvent
+from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, SignupApplicationCreate, SignupApplicationResponse, SignupInvitationValidateRequest, SignupVerificationRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
 from app.services.audit_service import AuditAction, write_audit_log
-from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, session_for_refresh_token, utc_now, verify_password
+from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, hash_password, session_for_refresh_token, token_hash, utc_now, verify_password
 from app.services.channel_service import SMS_TEMPLATES, intent_from_text, normalize_webhook, valid_signature
 from app.services.facility_routing import select_nearest_eligible_hospital, valid_coordinates
 
@@ -1039,6 +1040,200 @@ async def public_triage_preview(request: Request) -> dict[str, Any]:
         "matched_symptoms": clinical_route.symptom_ids,
         "disclaimer": "This preview is informational and does not replace assessment by a qualified clinician.",
     }
+
+SIGNUP_ONBOARDING_TYPES = {"patient": "PUBLIC_SELF_REGISTRATION", "specialist": "ORGANIZATION_APPLICATION", "hospital": "ORGANIZATION_APPLICATION", "clinic": "ORGANIZATION_APPLICATION", "nurse": "INVITATION_ONLY", "pharmacy": "ORGANIZATION_APPLICATION", "laboratory": "ORGANIZATION_APPLICATION", "hmo": "ORGANIZATION_APPLICATION", "government": "INVITATION_ONLY", "platform-admin": "INVITATION_ONLY"}
+SIGNUP_PENDING_STATUSES = {"patient": "PHONE_VERIFICATION_REQUIRED", "specialist": "PENDING_PROFESSIONAL_VERIFICATION", "hospital": "PENDING_FACILITY_VERIFICATION", "clinic": "PENDING_FACILITY_VERIFICATION", "nurse": "PENDING_EMPLOYER_APPROVAL", "pharmacy": "PENDING_PHARMACY_VERIFICATION", "laboratory": "PENDING_LABORATORY_VERIFICATION", "hmo": "PENDING_PAYER_VERIFICATION", "government": "PENDING_GOVERNMENT_VERIFICATION", "platform-admin": "PENDING_VERIFICATION"}
+SIGNUP_LOGIN_PATHS = {"patient": "/login", "specialist": "/specialist/login", "hospital": "/hospital/login", "clinic": "/auth/login", "nurse": "/auth/login", "pharmacy": "/auth/login", "laboratory": "/auth/login", "hmo": "/auth/login", "government": "/auth/login", "platform-admin": "/auth/login"}
+SIGNUP_DASHBOARD_PATHS = {"patient": "/dashboard", "specialist": "/specialist/dashboard", "hospital": "/hospital/dashboard", "clinic": "/clinic/dashboard", "nurse": "/nurse/dashboard", "pharmacy": "/pharmacy/dashboard", "laboratory": "/lab/dashboard", "hmo": "/hmo/dashboard", "government": "/moh/dashboard", "platform-admin": "/dashboard/admin"}
+ADMINISTRATOR_ROLES = {"SUPER_ADMIN", "SECURITY_ADMIN", "COMPLIANCE_ADMIN", "TENANT_REVIEWER", "SUPPORT_ADMIN", "AUDITOR"}
+INVITATION_ROLES = {"specialist": {"specialist", "doctor"}, "nurse": {"nurse"}, "government": {"government", "moh"}, "platform-admin": {"platform-admin", "admin", *ADMINISTRATOR_ROLES}}
+ORGANIZATION_SIGNUP_TYPES = {"hospital", "clinic", "pharmacy", "laboratory", "hmo", "government"}
+PROFESSIONAL_SIGNUP_TYPES = {"specialist", "nurse"}
+
+
+def _signup_value(payload: SignupApplicationCreate, key: str) -> Any:
+    return payload.data.get(key, getattr(payload, key, None))
+
+
+def _require_signup_fields(payload: SignupApplicationCreate, fields: tuple[str, ...]) -> None:
+    missing = [field.replace("_", " ") for field in fields if _signup_value(payload, field) in (None, "", [], False)]
+    if missing:
+        raise HTTPException(status_code=422, detail=f"Required fields: {', '.join(missing)}")
+
+
+def _signup_reference() -> str:
+    return f"SV-APP-{datetime.now(UTC):%Y%m%d}-{secrets.token_hex(4).upper()}"
+
+
+async def _validated_invitation(session: AsyncSession, role: str, raw_token: str | None, email: str | None) -> StaffInvitation | None:
+    if not raw_token:
+        return None
+    invitation = await session.scalar(select(StaffInvitation).where(StaffInvitation.token_hash == token_hash(raw_token)))
+    now = utc_now()
+    intended_role = (invitation.intended_role or invitation.permitted_role) if invitation else None
+    if not invitation or invitation.revoked_at is not None or invitation.accepted_at is not None or (invitation.expires_at and invitation.expires_at.replace(tzinfo=UTC) <= now) or intended_role not in INVITATION_ROLES.get(role, set()) or (invitation.invited_email and invitation.invited_email.lower() != (email or "").lower()):
+        raise HTTPException(status_code=422, detail="Invitation is invalid, expired, already used, or does not match this role")
+    return invitation
+
+
+def _signup_coordinates(data: dict[str, Any]) -> tuple[float, float]:
+    try:
+        latitude, longitude = float(data.get("latitude")), float(data.get("longitude"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Valid latitude and longitude are required")
+    if not valid_coordinates(latitude, longitude):
+        raise HTTPException(status_code=422, detail="Coordinates are outside the valid latitude/longitude range")
+    return latitude, longitude
+
+
+def _validate_signup(role: str, payload: SignupApplicationCreate, invitation: StaffInvitation | None) -> None:
+    required = {
+        "patient": ("first_name", "last_name", "phone", "password", "date_of_birth"),
+        "specialist": ("full_name", "phone", "email", "password", "professional_title", "primary_specialty", "licence_number", "licensing_authority", "licence_jurisdiction"),
+        "hospital": ("legal_name", "registration_number", "licence_number", "regulatory_authority", "official_email", "administrator_name", "password", "latitude", "longitude"),
+        "clinic": ("legal_name", "clinic_type", "registration_number", "licence_number", "official_email", "administrator_name", "password", "latitude", "longitude"),
+        "nurse": ("full_name", "phone", "email", "password", "nursing_category", "licence_number", "licensing_authority", "licence_jurisdiction"),
+        "pharmacy": ("legal_name", "registration_number", "licence_number", "regulatory_authority", "responsible_professional", "responsible_professional_licence", "official_email", "administrator_name", "password", "latitude", "longitude"),
+        "laboratory": ("legal_name", "registration_number", "accreditation_number", "regulatory_authority", "responsible_professional", "responsible_professional_licence", "official_email", "administrator_name", "password", "latitude", "longitude"),
+        "hmo": ("legal_name", "organization_type", "registration_number", "regulatory_authority", "official_email", "administrator_name", "password"),
+        "government": ("legal_name", "government_level", "jurisdiction", "official_email", "full_name", "official_title"),
+        "platform-admin": ("full_name", "email", "phone", "password", "admin_role", "mfa_method", "security_policy_acceptance"),
+    }[role]
+    _require_signup_fields(payload, required)
+    if role in {"nurse", "platform-admin"} and not invitation:
+        raise HTTPException(status_code=422, detail="A valid single-use invitation is required")
+    if role == "government" and not invitation and not payload.data.get("authorization_document_key"):
+        raise HTTPException(status_code=422, detail="A valid invitation or authorization document is required")
+    if role == "government":
+        email = str(payload.data.get("official_email", payload.email or "")).lower()
+        if any(domain in email for domain in ("gmail.com", "yahoo.com", "outlook.com")):
+            raise HTTPException(status_code=422, detail="Government applications require an official domain email")
+    if role == "platform-admin":
+        requested_role = payload.data.get("admin_role")
+        if requested_role not in ADMINISTRATOR_ROLES:
+            raise HTTPException(status_code=422, detail="Unsupported administrator role")
+        invitation_limit = invitation.intended_role if invitation else None
+        if invitation_limit in ADMINISTRATOR_ROLES and requested_role != invitation_limit:
+            raise HTTPException(status_code=422, detail="Requested administrator role exceeds the invitation scope")
+
+
+async def _create_signup(role: str, payload: SignupApplicationCreate, request: Request, session: AsyncSession) -> SignupApplicationResponse:
+    invitation = await _validated_invitation(session, role, payload.invitation_token, payload.email)
+    _validate_signup(role, payload, invitation)
+    latitude, longitude = _signup_coordinates(payload.data) if role in {"hospital", "clinic", "pharmacy", "laboratory"} else (None, None)
+    filters = [condition for condition in (SignupApplication.email == payload.email if payload.email else None, SignupApplication.phone == payload.phone if payload.phone else None) if condition is not None]
+    if filters and await session.scalar(select(SignupApplication).where(SignupApplication.application_type == role, or_(*filters), SignupApplication.status.notin_(["REJECTED", "SUSPENDED"]))):
+        raise HTTPException(status_code=409, detail="An active application already exists for this email or phone")
+    if role == "patient" and await session.scalar(select(AuthAccount).where(or_(AuthAccount.email == payload.email, AuthAccount.phone == payload.phone))):
+        raise HTTPException(status_code=409, detail="An account already exists for this email or phone")
+    safe_payload = payload.model_dump(exclude={"password", "confirm_password", "invitation_token"})
+    application = SignupApplication(reference=_signup_reference(), application_type=role, onboarding_type=SIGNUP_ONBOARDING_TYPES[role], status=SIGNUP_PENDING_STATUSES[role], email=payload.email or payload.data.get("official_email"), phone=payload.phone, country=payload.country, organization_name=payload.data.get("legal_name"), payload_json=json.dumps(safe_payload, default=str), password_hash=hash_password(payload.password) if payload.password else None, invitation_id=invitation.id if invitation else None, consent_version=payload.consent_version)
+    session.add(application)
+    await session.flush()
+    for consent_type, accepted in (("TERMS", payload.accept_terms), ("PRIVACY", payload.accept_privacy), ("MARKETING", payload.marketing_consent)):
+        session.add(ConsentRecord(signup_application_id=application.id, consent_type=consent_type, policy_version=payload.consent_version, accepted=accepted, ip_address=request.client.host if request.client else None))
+    session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status=None, new_status=application.status))
+    if role == "patient":
+        verification_code = f"{secrets.randbelow(1_000_000):06d}"
+        session.add(VerificationEvent(signup_application_id=application.id, event_type="PHONE_OTP", status="PENDING", token_hash=token_hash(verification_code), expires_at=utc_now() + timedelta(minutes=10)))
+    if role in ORGANIZATION_SIGNUP_TYPES:
+        session.add(OrganizationApplication(signup_application_id=application.id, legal_name=payload.data.get("legal_name", ""), registration_number=payload.data.get("registration_number"), licence_number=payload.data.get("licence_number") or payload.data.get("accreditation_number"), regulatory_authority=payload.data.get("regulatory_authority"), latitude=latitude, longitude=longitude, verification_status=application.status))
+    if role in PROFESSIONAL_SIGNUP_TYPES:
+        expiration = payload.data.get("licence_expiration")
+        expires_at = datetime.fromisoformat(expiration) if expiration else None
+        if expires_at and expires_at.replace(tzinfo=UTC) <= utc_now():
+            raise HTTPException(status_code=422, detail="Professional licence is expired")
+        session.add(ProfessionalCredential(signup_application_id=application.id, licence_number=payload.data["licence_number"], licensing_authority=payload.data["licensing_authority"], jurisdiction=payload.data["licence_jurisdiction"], specialty=payload.data.get("primary_specialty") or payload.data.get("nursing_category"), expires_at=expires_at))
+    for document in payload.data.get("documents", []):
+        if not isinstance(document, dict) or not document.get("private_storage_key") or str(document.get("private_storage_key")).startswith(("http://", "https://")):
+            raise HTTPException(status_code=422, detail="Verification documents must use private storage keys")
+        if document.get("content_type") not in {"application/pdf", "image/jpeg", "image/png"} or not 1 <= int(document.get("size_bytes", 0)) <= 10_000_000:
+            raise HTTPException(status_code=422, detail="Verification document type or size is not allowed")
+        session.add(VerificationDocument(signup_application_id=application.id, document_type=document.get("document_type", "OTHER"), private_storage_key=document["private_storage_key"], original_name=document.get("original_name", "document"), content_type=document["content_type"], size_bytes=int(document["size_bytes"])))
+    await session.commit()
+    return SignupApplicationResponse(id=application.id, reference=application.reference, application_type=role, onboarding_type=application.onboarding_type, status=application.status, submitted_at=application.submitted_at, login_path=SIGNUP_LOGIN_PATHS[role], dashboard_path=None)
+
+@router.post("/signup/patient", response_model=SignupApplicationResponse, status_code=201)
+async def signup_patient(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("patient", payload, request, session)
+
+@router.post("/signup/specialist", response_model=SignupApplicationResponse, status_code=201)
+async def signup_specialist(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("specialist", payload, request, session)
+
+@router.post("/signup/hospital", response_model=SignupApplicationResponse, status_code=201)
+async def signup_hospital(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("hospital", payload, request, session)
+
+@router.post("/signup/clinic", response_model=SignupApplicationResponse, status_code=201)
+async def signup_clinic(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("clinic", payload, request, session)
+
+@router.post("/signup/nurse", response_model=SignupApplicationResponse, status_code=201)
+async def signup_nurse(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("nurse", payload, request, session)
+
+@router.post("/signup/pharmacy", response_model=SignupApplicationResponse, status_code=201)
+async def signup_pharmacy(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("pharmacy", payload, request, session)
+
+@router.post("/signup/laboratory", response_model=SignupApplicationResponse, status_code=201)
+async def signup_laboratory(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("laboratory", payload, request, session)
+
+@router.post("/signup/hmo", response_model=SignupApplicationResponse, status_code=201)
+async def signup_hmo(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("hmo", payload, request, session)
+
+@router.post("/signup/government", response_model=SignupApplicationResponse, status_code=201)
+async def signup_government(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("government", payload, request, session)
+
+@router.post("/signup/platform-admin", response_model=SignupApplicationResponse, status_code=201)
+async def signup_platform_admin(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("platform-admin", payload, request, session)
+
+@router.post("/signup/invitations/validate")
+async def validate_signup_invitation(payload: SignupInvitationValidateRequest, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    invitation = await _validated_invitation(session, payload.role, payload.token, payload.email)
+    assert invitation is not None
+    return {"valid": True, "organization_id": str(invitation.organization_id or invitation.hospital_id), "department_id": invitation.department_id, "intended_role": invitation.intended_role or invitation.permitted_role, "expires_at": invitation.expires_at}
+
+async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSession, event_type: str) -> SignupApplicationResponse:
+    application = await session.get(SignupApplication, payload.application_id)
+    if not application or application.application_type != "patient":
+        raise HTTPException(status_code=404, detail="Signup application not found")
+    event = await session.scalar(select(VerificationEvent).where(VerificationEvent.signup_application_id == application.id, VerificationEvent.event_type == event_type, VerificationEvent.status == "PENDING").order_by(VerificationEvent.created_at.desc()))
+    if not event or not event.token_hash or event.token_hash != token_hash(payload.code) or (event.expires_at and event.expires_at.replace(tzinfo=UTC) <= utc_now()):
+        raise HTTPException(status_code=422, detail="Verification code is invalid or expired")
+    data = json.loads(application.payload_json)
+    if not application.password_hash or not application.phone:
+        raise HTTPException(status_code=422, detail="Patient application is incomplete")
+    account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, date_of_birth=datetime.fromisoformat(data["data"]["date_of_birth"]) if data.get("data", {}).get("date_of_birth") else None, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", is_active=True)
+    session.add(account)
+    await session.flush()
+    application.account_id, application.status = account.id, "ACTIVE"
+    event.status, event.completed_at = "VERIFIED", utc_now()
+    for consent in (await session.execute(select(ConsentRecord).where(ConsentRecord.signup_application_id == application.id))).scalars().all():
+        consent.account_id = account.id
+    session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status="PHONE_VERIFICATION_REQUIRED", new_status="ACTIVE"))
+    await session.commit()
+    return SignupApplicationResponse(id=application.id, reference=application.reference, application_type="patient", onboarding_type=application.onboarding_type, status="ACTIVE", submitted_at=application.submitted_at, login_path="/login", dashboard_path="/dashboard")
+
+@router.post("/signup/verify-phone", response_model=SignupApplicationResponse)
+async def verify_signup_phone(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _verify_patient(payload, session, "PHONE_OTP")
+
+@router.post("/signup/verify-email", response_model=SignupApplicationResponse)
+async def verify_signup_email(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _verify_patient(payload, session, "EMAIL_OTP")
+
+@router.get("/signup/status/{application_id}", response_model=SignupApplicationResponse)
+async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    application = await session.get(SignupApplication, application_id)
+    if not application:
+        raise HTTPException(status_code=404, detail="Signup application not found")
+    return SignupApplicationResponse(id=application.id, reference=application.reference, application_type=application.application_type, onboarding_type=application.onboarding_type, status=application.status, submitted_at=application.submitted_at, login_path=SIGNUP_LOGIN_PATHS[application.application_type], dashboard_path=SIGNUP_DASHBOARD_PATHS[application.application_type] if application.status == "ACTIVE" else None)
 
 @router.get("/public/pricing")
 async def public_pricing() -> dict[str, Any]:

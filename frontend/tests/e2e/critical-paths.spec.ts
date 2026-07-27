@@ -12,7 +12,6 @@ async function nurseLogin(page: import('@playwright/test').Page) {
 test('patient can log in and reach the authenticated dashboard', async ({ page }) => {
   const pageErrors: Error[] = [];
   page.on('pageerror', (error) => pageErrors.push(error));
-  await page.addInitScript(() => localStorage.setItem('synaptiverse_demo_session', JSON.stringify({ is_demo: true, role: 'patient', created_at: new Date().toISOString() })));
   await page.goto('/login');
   await page.getByLabel('Phone number').fill('+2348012345678');
   await page.getByLabel('Password').fill('Password123!');

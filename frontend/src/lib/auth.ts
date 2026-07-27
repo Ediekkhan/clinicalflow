@@ -1,7 +1,5 @@
 'use client';
 
-import { clearDemoSession, getDemoApiResponse } from '@/lib/demo-session';
-
 const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
 let refreshPromise: Promise<boolean> | null = null;
 let redirectingToLogin = false;
@@ -68,10 +66,6 @@ function refreshSessionOnce(): Promise<boolean> {
 
 async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object, retry = true) {
   const isAuthenticationRequest = url.startsWith('/api/v1/auth/');
-  if (!isAuthenticationRequest) {
-    const demoResponse = getDemoApiResponse(method, url, body);
-    if (demoResponse !== undefined) return demoResponse;
-  }
 
   const response = await fetch(`${getApiBase()}${url}`, {
     method,
@@ -103,7 +97,6 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
   }
   const payload = await response.json();
   if (url.includes('/auth/') && url.endsWith('/login') && typeof document !== 'undefined' && typeof payload?.role === 'string') {
-    clearDemoSession();
     const secure = window.location.protocol === 'https:' ? '; Secure' : '';
     document.cookie = `synaptiverse_role=${encodeURIComponent(payload.role)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
   }
