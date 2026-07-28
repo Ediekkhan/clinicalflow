@@ -359,8 +359,8 @@ def _set_session_cookies(response: Response, access_token: str, refresh_token: s
 def _set_role_cookie(response: Response, role: str) -> None:
     response.set_cookie("synaptiverse_role", role, max_age=settings.auth_refresh_days * 86400, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite, path="/")
 
-async def _login_account(account: AuthAccount, response: Response, session: AsyncSession) -> AuthSessionResponse:
-    issued = await create_session(session, account)
+async def _login_account(account: AuthAccount, request: Request, response: Response, session: AsyncSession) -> AuthSessionResponse:
+    issued = await create_session(session, account, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"))
     await session.commit()
     _set_session_cookies(response, issued.access_token, issued.refresh_token)
     _set_role_cookie(response, account.role)
@@ -430,10 +430,20 @@ async def login(role: str, payload: AuthLoginRequest, request: Request, response
         account = await find_account(session, role, identifier, uuid.UUID(settings.default_tenant_id))
     else:
         account = await session.scalar(select(AuthAccount).where(AuthAccount.role == role, func.lower(AuthAccount.identifier) == identifier, AuthAccount.is_active.is_(True)))
+    now = utc_now()
+    if account and account.locked_until and account.locked_until.replace(tzinfo=UTC) > now:
+        raise HTTPException(status_code=423, detail="Account is temporarily locked. Try again later.")
     if not account or not verify_password(payload.password, account.password_hash):
+        if account:
+            account.failed_login_attempts += 1
+            if account.failed_login_attempts >= settings.auth_max_failed_attempts:
+                account.locked_until = now + timedelta(minutes=settings.auth_lockout_minutes)
+            await session.commit()
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    return await _login_account(account, response, session)
+    account.failed_login_attempts = 0
+    account.locked_until = None
 
+    return await _login_account(account, request, response, session)
 @router.post("/auth/staff/pin-login", response_model=AuthSessionResponse)
 async def pin_login(payload: PinLoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthSessionResponse:
     if not settings.fixtures_enabled:
@@ -443,7 +453,7 @@ async def pin_login(payload: PinLoginRequest, request: Request, response: Respon
     account = await find_account(session, payload.role, identifier, uuid.UUID(settings.default_tenant_id))
     if not account or not verify_password(payload.pin, account.password_hash):
         raise HTTPException(status_code=401, detail="Invalid role or PIN")
-    return await _login_account(account, response, session)
+    return await _login_account(account, request, response, session)
 
 @router.post("/auth/hospital/account-login", response_model=AuthSessionResponse)
 async def hospital_login(payload: HospitalLoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthSessionResponse:
@@ -454,7 +464,7 @@ async def hospital_login(payload: HospitalLoginRequest, request: Request, respon
     account = await find_account(session, payload.role, identifier, uuid.UUID(settings.default_tenant_id))
     if not account or not verify_password(payload.password, account.password_hash):
         raise HTTPException(status_code=401, detail="Invalid hospital credentials")
-    return await _login_account(account, response, session)
+    return await _login_account(account, request, response, session)
 
 @router.get("/auth/{role}/me", response_model=AuthProfileResponse)
 async def get_current_profile(role: str, request: Request) -> AuthProfileResponse:
@@ -475,7 +485,8 @@ async def refresh_auth(request: Request, response: Response, session: AsyncSessi
         raise HTTPException(status_code=401, detail="Refresh session expired")
     account, previous = authenticated
     previous.revoked_at = utc_now()
-    issued = await create_session(session, account)
+    previous.revoked_reason = "REFRESH_ROTATED"
+    issued = await create_session(session, account, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"))
     await session.commit()
     _set_session_cookies(response, issued.access_token, issued.refresh_token)
     return AuthRefreshResponse(access_expires_at=issued.session.access_expires_at)
@@ -486,7 +497,23 @@ async def logout_auth(request: Request, response: Response, session: AsyncSessio
     authenticated = await session_for_refresh_token(session, token) if token else None
     if authenticated:
         authenticated[1].revoked_at = utc_now()
+        authenticated[1].revoked_reason = "LOGOUT"
         await session.commit()
+    response.delete_cookie(ACCESS_COOKIE, path="/")
+    response.delete_cookie(REFRESH_COOKIE, path="/")
+    response.delete_cookie("synaptiverse_role", path="/")
+    response.status_code = 204
+    return response
+
+@router.post("/auth/logout-all", status_code=204)
+async def logout_all_auth(request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> Response:
+    account = await require_account(request, session)
+    now = utc_now()
+    sessions = list((await session.execute(select(AuthSession).where(AuthSession.account_id == account.id, AuthSession.revoked_at.is_(None)))).scalars())
+    for auth_session in sessions:
+        auth_session.revoked_at = now
+        auth_session.revoked_reason = "LOGOUT_ALL"
+    await session.commit()
     response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
     response.delete_cookie("synaptiverse_role", path="/")
@@ -1480,7 +1507,7 @@ async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSess
     duplicate = await session.scalar(select(PatientRegistry).where(PatientRegistry.duplicate_key == duplicate_key).limit(1))
     if duplicate:
         raise HTTPException(status_code=409, detail="A matching patient identity already exists and requires duplicate review")
-    account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", is_active=True)
+    account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
     session.add(account)
     await session.flush()
     await ensure_patient_registry(session, account)

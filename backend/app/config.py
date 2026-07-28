@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     neo4j_enabled: bool = False
     auth_access_minutes: int = 15
     auth_refresh_days: int = 14
+    auth_max_failed_attempts: int = 5
+    auth_lockout_minutes: int = 15
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
     session_secret: str = "development-only-change-me"

@@ -65,7 +65,7 @@ class IssuedSession:
     refresh_token: str
 
 
-async def create_session(db: AsyncSession, account: AuthAccount) -> IssuedSession:
+async def create_session(db: AsyncSession, account: AuthAccount, *, ip_address: str | None = None, user_agent: str | None = None) -> IssuedSession:
     access_token = f"{account.tenant_id}.{secrets.token_urlsafe(48)}"
     refresh_token = f"{account.tenant_id}.{secrets.token_urlsafe(64)}"
     now = utc_now()
@@ -76,6 +76,9 @@ async def create_session(db: AsyncSession, account: AuthAccount) -> IssuedSessio
         refresh_token_hash=token_hash(refresh_token),
         access_expires_at=now + timedelta(minutes=settings.auth_access_minutes),
         refresh_expires_at=now + timedelta(days=settings.auth_refresh_days),
+        ip_address=ip_address,
+        user_agent=user_agent,
+        last_seen_at=now,
     )
     db.add(session)
     await db.flush()

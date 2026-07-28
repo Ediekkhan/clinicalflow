@@ -128,3 +128,56 @@ def test_nurse_can_load_public_safe_waiting_room_feed() -> None:
         response = client.get("/api/v1/hospital/waiting-room")
     assert response.status_code == 200
     assert {"now_serving", "up_next", "departments"} <= response.json().keys()
+
+
+def test_failed_logins_temporarily_lock_an_account() -> None:
+    from app.config import settings
+
+    previous_limit = settings.auth_max_failed_attempts
+    previous_duration = settings.auth_lockout_minutes
+    settings.auth_max_failed_attempts = 2
+    settings.auth_lockout_minutes = 1
+    try:
+        with TestClient(app) as client:
+            for _ in range(2):
+                response = client.post(
+                    "/api/v1/auth/patient/login",
+                    json={"phone": "+2348012345678", "password": "wrong-password"},
+                )
+                assert response.status_code == 401
+            locked = client.post(
+                "/api/v1/auth/patient/login",
+                json={"phone": "+2348012345678", "password": "Password123!"},
+            )
+        assert locked.status_code == 423
+    finally:
+        settings.auth_max_failed_attempts = previous_limit
+        settings.auth_lockout_minutes = previous_duration
+
+        async def reset_account() -> None:
+            from sqlalchemy import select
+            from app.models import AuthAccount
+
+            async with app.state.session_factory() as session:
+                account = await session.scalar(select(AuthAccount).where(AuthAccount.identifier == "+2348012345678"))
+                assert account is not None
+                account.failed_login_attempts = 0
+                account.locked_until = None
+                await session.commit()
+
+        import asyncio
+        asyncio.run(reset_account())
+
+
+def test_logout_all_revokes_active_sessions() -> None:
+    with TestClient(app) as client:
+        login = client.post(
+            "/api/v1/auth/patient/login",
+            json={"phone": "+2348012345678", "password": "Password123!"},
+        )
+        assert login.status_code == 200
+        response = client.post("/api/v1/auth/logout-all")
+        profile = client.get("/api/v1/auth/patient/me")
+
+    assert response.status_code == 204
+    assert profile.status_code == 401
