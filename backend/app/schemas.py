@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 Channel = Literal["WHATSAPP", "USSD", "WEB", "SMS"]
 UrgencyLevel = Literal["CRITICAL", "URGENT", "ROUTINE"]
-QueueStatus = Literal["QUEUED", "BEING_SEEN", "RESOLVED", "AWAITING_CLINICAL_REVIEW", "SPECIALIST_UNAVAILABLE"]
+QueueStatus = Literal["ROUTED", "AWAITING_FACILITY_ACCEPTANCE", "ACCEPTED", "REJECTED", "REDIRECTED", "TRAVELLING", "ARRIVED", "CHECKED_IN", "WAITING_FOR_NURSE", "WAITING_FOR_DOCTOR", "QUEUED", "BEING_SEEN", "ADMITTED", "DISCHARGED", "TRANSFERRED", "CANCELLED", "RESOLVED", "AWAITING_CLINICAL_REVIEW", "SPECIALIST_UNAVAILABLE"]
 
 
 def normalize_nigerian_phone_value(value: str | None) -> str | None:

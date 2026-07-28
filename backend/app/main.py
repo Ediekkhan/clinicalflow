@@ -7,16 +7,21 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from app.config import settings
-from app.models import Base
+from app.clinical_routes import register_clinical_routes
+from app.sector_routes import register_sector_routes
+from app.terminology_routes import register_terminology_routes
+from app.models import Base, FacilityService, Provider, Tenant
 from app.routes import register_routes, triage_manager
 from app.services.auth_service import seed_demo_accounts
 from app.services.scheduling_service import seed_demo_schedule
 from app.services.knowledge_graph import KnowledgeGraphService
 from app.services.knowledge_graph import SYMPTOM_ALIASES
+from app.services.registry_service import ensure_facility_registry
+from app.services.country_policy import ensure_nigeria_country_pack
 from app.services.redis_service import RedisInfrastructure
 from uuid import UUID
 
@@ -56,6 +61,9 @@ async def ensure_sqlite_additive_schema(engine) -> None:
             await conn.execute(text("ALTER TABLE tickets ADD COLUMN routed_tenant_id CHAR(32)"))
         if ticket_columns and "route_distance_km" not in ticket_columns:
             await conn.execute(text("ALTER TABLE tickets ADD COLUMN route_distance_km FLOAT"))
+        if ticket_columns and "terminology_release_id" not in ticket_columns:
+            await conn.execute(text("ALTER TABLE tickets ADD COLUMN terminology_release_id CHAR(32)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tickets_terminology_release_id ON tickets (terminology_release_id)"))
         if ticket_columns:
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tickets_routed_tenant_id ON tickets (routed_tenant_id)"))
             await conn.execute(text("UPDATE tickets SET routed_tenant_id = tenant_id WHERE routed_tenant_id IS NULL"))
@@ -96,6 +104,13 @@ async def ensure_sqlite_additive_schema(engine) -> None:
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_staff_memberships_assignment ON staff_memberships (hospital_id, department_id, specialty_id, role)"))
         if staff_membership_columns and "daily_capacity" not in staff_membership_columns:
             await conn.execute(text("ALTER TABLE staff_memberships ADD COLUMN daily_capacity INTEGER NOT NULL DEFAULT 12"))
+        for column_name in ("department_ref_id", "specialty_ref_id", "legacy_doctor_membership_id"):
+            if staff_membership_columns and column_name not in staff_membership_columns:
+                await conn.execute(text(f"ALTER TABLE staff_memberships ADD COLUMN {column_name} CHAR(32)"))
+        await conn.execute(text("CREATE TABLE IF NOT EXISTS specialties (id CHAR(32) PRIMARY KEY, code VARCHAR(64) NOT NULL UNIQUE, name VARCHAR(128) NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_specialties_status_name ON specialties (status, name)"))
+        await conn.execute(text("CREATE TABLE IF NOT EXISTS clinical_privileges (id CHAR(32) PRIMARY KEY, membership_id CHAR(32) NOT NULL, code VARCHAR(128) NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', granted_by_account_id CHAR(32), granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME, revoked_at DATETIME, UNIQUE (membership_id, code))"))
+        await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_clinical_privileges_membership_status ON clinical_privileges (membership_id, status)"))
         await conn.execute(text("CREATE TABLE IF NOT EXISTS hospital_departments (id CHAR(32) PRIMARY KEY, hospital_id CHAR(32) NOT NULL, name VARCHAR(128) NOT NULL, code VARCHAR(64) NOT NULL, description TEXT, status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE', coordinator_membership_id CHAR(32), capacity INTEGER, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE (hospital_id, code))"))
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_hospital_departments_hospital_status ON hospital_departments (hospital_id, status)"))
         await conn.execute(text("CREATE TABLE IF NOT EXISTS provider_availability (id CHAR(32) PRIMARY KEY, membership_id CHAR(32) NOT NULL, hospital_id CHAR(32) NOT NULL, department_id VARCHAR(128) NOT NULL, starts_at DATETIME NOT NULL, ends_at DATETIME NOT NULL, status VARCHAR(32) NOT NULL DEFAULT 'AVAILABLE', maximum_appointments INTEGER NOT NULL DEFAULT 12, booked_appointments INTEGER NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)"))
@@ -105,7 +120,8 @@ async def ensure_sqlite_additive_schema(engine) -> None:
         await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_staff_invitations_hospital_department ON staff_invitations (hospital_id, department_id)"))
         for column_name, column_type in (
             ("token_hash", "VARCHAR(64)"), ("organization_id", "CHAR(32)"), ("invited_phone", "VARCHAR(32)"),
-            ("intended_role", "VARCHAR(32)"), ("revoked_at", "DATETIME"), ("invited_by", "CHAR(32)"),
+            ("intended_role", "VARCHAR(32)"), ("specialty_id", "VARCHAR(128)"),
+            ("employment_type", "VARCHAR(64)"), ("revoked_at", "DATETIME"), ("invited_by", "CHAR(32)"),
         ):
             if staff_invitation_columns and column_name not in staff_invitation_columns:
                 await conn.execute(text(f"ALTER TABLE staff_invitations ADD COLUMN {column_name} {column_type}"))
@@ -125,6 +141,10 @@ async def ensure_sqlite_additive_schema(engine) -> None:
             await conn.execute(text("ALTER TABLE notifications ADD COLUMN priority VARCHAR(32) NOT NULL DEFAULT 'NORMAL'"))
         if notification_columns and "read_at" not in notification_columns:
             await conn.execute(text("ALTER TABLE notifications ADD COLUMN read_at DATETIME"))
+        if notification_columns and "acknowledged_at" not in notification_columns:
+            await conn.execute(text("ALTER TABLE notifications ADD COLUMN acknowledged_at DATETIME"))
+        if notification_columns and "acknowledged_by_account_id" not in notification_columns:
+            await conn.execute(text("ALTER TABLE notifications ADD COLUMN acknowledged_by_account_id CHAR(32)"))
         if notification_columns:
             await conn.execute(text("UPDATE notifications SET recipient_user_id = recipient_account_id WHERE recipient_user_id IS NULL"))
             await conn.execute(text("UPDATE notifications SET hospital_id = tenant_id WHERE hospital_id IS NULL"))
@@ -132,6 +152,18 @@ async def ensure_sqlite_additive_schema(engine) -> None:
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notifications_recipient_membership ON notifications (recipient_membership_id)"))
             await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_notifications_workspace ON notifications (hospital_id, department_id)"))
 
+
+async def seed_facility_registry_compatibility(session) -> None:
+    for tenant in list((await session.execute(select(Tenant))).scalars().all()):
+        registry = await ensure_facility_registry(session, tenant)
+        if str(tenant.id) == settings.default_tenant_id:
+            registry.emergency_capable = True
+        specialties = list((await session.execute(select(Provider.specialty).where(Provider.tenant_id == tenant.id, Provider.is_active.is_(True)).distinct())).scalars().all())
+        for specialty in specialties:
+            exists = await session.scalar(select(FacilityService.id).where(FacilityService.facility_registry_id == registry.id, FacilityService.service_code == specialty, FacilityService.specialty_code == specialty))
+            if not exists:
+                session.add(FacilityService(facility_registry_id=registry.id, service_code=specialty, specialty_code=specialty, status="ACTIVE"))
+    await session.commit()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -146,6 +178,11 @@ async def lifespan(app: FastAPI):
         await seed_demo_accounts(session)
     async with app.state.session_factory() as session:
         await seed_demo_schedule(session, UUID(settings.default_tenant_id))
+    async with app.state.session_factory() as session:
+        await seed_facility_registry_compatibility(session)
+    async with app.state.session_factory() as session:
+        await ensure_nigeria_country_pack(session)
+        await session.commit()
     app.state.redis = RedisInfrastructure(
         enabled=settings.redis_enabled,
         url=settings.redis_url,
@@ -179,6 +216,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+register_clinical_routes(app)
+register_sector_routes(app)
+register_terminology_routes(app)
 register_routes(app)
 
 
@@ -196,6 +236,11 @@ async def structured_request_logging(request, call_next):
     if response.status_code >= 500:
         request_metrics["errors_total"] += 1
     response.headers["x-request-id"] = request_id
+    response.headers["x-content-type-options"] = "nosniff"
+    response.headers["x-frame-options"] = "DENY"
+    response.headers["referrer-policy"] = "strict-origin-when-cross-origin"
+    response.headers["permissions-policy"] = "camera=(), microphone=(), geolocation=(self)"
+    response.headers["content-security-policy"] = "default-src 'none'; frame-ancestors 'none'"
     route = request.scope.get("route")
     logger.info(json.dumps({"event": "request.completed", "request_id": request_id, "method": request.method, "route": getattr(route, "path", "unmatched"), "status": response.status_code, "duration_ms": round((time.perf_counter() - started) * 1000, 2)}))
     return response

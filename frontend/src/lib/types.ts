@@ -112,6 +112,9 @@ export type HospitalPatient = {
   status: string;
   assignment_status: string;
   routing_distance_km: number | null;
+  routing_reason: string | null;
+  routing_status: string | null;
+  acceptance_required: boolean;
   appointment_status: string | null;
   appointment_id: string | null;
 };

@@ -18,7 +18,9 @@ type TriageResponse = {
   severity?: IllnessSeverity;
   severity_label?: string;
   severity_message?: string;
-  nearest_clinic?: { clinic_name?: string; address?: string; distance_km?: number | null; specialist_name?: string | null; match_basis?: string };
+  required_department?: string;
+  nearest_clinic?: { clinic_name?: string; address?: string; distance_km?: number | null; specialist_name?: string | null; match_basis?: string; required_specialty?: string; emergency_capable?: boolean };
+  alternative_facilities?: { tenant_id?: string; clinic_name?: string; address?: string; distance_km?: number | null; match_basis?: string }[];
   appointment_slot?: { slot_start?: string; specialist_name?: string; specialty?: string; room_label?: string };
   ticket?: { id?: string; ticket_number?: string };
 };
@@ -50,7 +52,7 @@ export function TriageChat() {
     const symptomText = text.trim();
     if (!symptomText) return;
     if (!coords) {
-      setError('Add your current location before analysis so we can route this ticket to the nearest registered hospital.');
+      setError('Add your current location before analysis so we can route this ticket to a clinically suitable registered hospital.');
       return;
     }
     setUserMessage(symptomText);
@@ -107,7 +109,7 @@ export function TriageChat() {
             </button>
           </div>
           <p className="mt-2 text-xs leading-5 text-[#60706a]">
-            {coords ? 'Your coordinates will be used only to select the nearest eligible registered hospital for this ticket.' : 'We need browser location permission before creating a ticket, so we do not guess the nearest hospital.'}
+            {coords ? 'Your coordinates will be used only to rank clinically suitable registered facilities for this ticket.' : 'We need browser location permission before creating a ticket, so we do not guess a destination facility.'}
           </p>
           {locationError ? <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{locationError}</p> : null}
         </div>
@@ -138,6 +140,7 @@ export function TriageChat() {
                   </div>
                 ) : null}
                 {result.condition_name ? <p className="mt-3 text-sm text-slate-500">Clinical pattern: <span className="font-semibold text-slate-700">{result.condition_name}</span></p> : null}
+                {result.required_department ? <p className="mt-2 text-sm text-slate-500">Required department: <span className="font-semibold text-slate-700">{result.required_department}</span></p> : null}
                 {result.severity_message ? <p className="mt-2 text-sm text-slate-600">{result.severity_message}</p> : null}
               </div>
             ) : null}
@@ -154,7 +157,22 @@ export function TriageChat() {
                 </div>
               </div>
             ) : null}
-            {result.appointment_slot ? (
+            {(result.alternative_facilities?.length ?? 0) > 0 ? (
+              <div className="max-w-[85%] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Other suitable facilities</p>
+                <div className="mt-3 divide-y divide-slate-100">
+                  {result.alternative_facilities?.map((facility) => (
+                    <div key={facility.tenant_id} className="py-3 first:pt-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div><p className="text-sm font-semibold text-slate-900">{facility.clinic_name}</p><p className="text-xs text-slate-500">{facility.address}</p></div>
+                        {typeof facility.distance_km === 'number' ? <span className="shrink-0 text-xs font-semibold text-[#60706a]">{facility.distance_km} km</span> : null}
+                      </div>
+                      {facility.match_basis ? <p className="mt-1 text-xs text-slate-400">{facility.match_basis}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}            {result.appointment_slot ? (
               <div className="max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                 <div className="flex gap-3">
                   <Calendar className="h-5 w-5 text-[#0b5d4b]" />

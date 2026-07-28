@@ -7,6 +7,7 @@ import { LogOut } from 'lucide-react';
 import { NotificationBell } from '@/components/layout/NotificationBell';
 import { MobileBottomNav, type DashboardNavItem } from '@/components/layout/MobileBottomNav';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { WorkspaceSelector } from '@/components/layout/WorkspaceSelector';
 
 type DashboardShellProps = {
   entityType: string;
@@ -48,7 +49,10 @@ export function DashboardShell({
           </Link>
           <NotificationBell basePath={resolvedBase} />
         </header>
-        <div className="mx-auto w-full max-w-[1320px] px-5 py-8 md:px-10 md:py-10 xl:px-14 xl:py-12">{children}</div>
+        <div className="mx-auto w-full max-w-[1320px] px-5 py-8 md:px-10 md:py-10 xl:px-14 xl:py-12">
+          <WorkspaceSelector />
+          {children}
+        </div>
       </main>
       <MobileBottomNav navItems={navItems} />
     </div>

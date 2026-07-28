@@ -157,7 +157,7 @@ async def seed_demo_accounts(db: AsyncSession) -> None:
             credential = {"nurse": "2468", "admin": "1357"}.get(seed["role"], "Password123!")
             db.add(AuthAccount(tenant_id=tenant_id, password_hash=hash_password(credential), **seed))
     await db.flush()
-    staff_accounts = list((await db.execute(select(AuthAccount).where(AuthAccount.tenant_id == tenant_id, AuthAccount.role.in_(["doctor", "nurse", "hospital_admin"])))).scalars().all())
+    staff_accounts = list((await db.execute(select(AuthAccount).where(AuthAccount.tenant_id == tenant_id, AuthAccount.role.in_(["doctor", "specialist", "nurse", "hospital_admin"])))).scalars().all())
     for account in staff_accounts:
         department = account.specialty or "General Medicine"
         existing_membership = await db.scalar(select(StaffMembership).where(StaffMembership.user_id == account.id, StaffMembership.hospital_id == tenant_id, StaffMembership.department_id == department, StaffMembership.role == account.role))

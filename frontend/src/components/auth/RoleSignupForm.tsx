@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Check, Loader2, ShieldCheck } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/auth';
 import type { SignupConfig, SignupField } from '@/lib/signup-config';
 
 type Values = Record<string, string>;
 type SignupResponse = { id: string; reference: string; status: string };
+type LookupOption = { id: string; name: string; location?: string };
+type InvitationContext = { hospital_name?: string; department_id: string; intended_role: string; specialty_id?: string; employment_type?: string };
 
 const topLevelFields = new Set(['first_name', 'middle_name', 'last_name', 'full_name', 'phone', 'email', 'country', 'region', 'password', 'confirm_password', 'invitation_token']);
 
@@ -32,7 +34,7 @@ function validateField(field: SignupField, value: string) {
   return '';
 }
 
-function FieldControl({ field, value, error, onChange }: { field: SignupField; value: string; error?: string; onChange: (value: string) => void }) {
+function FieldControl({ field, value, error, onChange, lookupOptions }: { field: SignupField; value: string; error?: string; onChange: (value: string) => void; lookupOptions?: LookupOption[] }) {
   const id = `signup-${field.name}`;
   const describedBy = error ? `${id}-error` : undefined;
   return (
@@ -43,7 +45,7 @@ function FieldControl({ field, value, error, onChange }: { field: SignupField; v
       ) : field.type === 'select' ? (
         <select id={id} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} aria-describedby={describedBy} className={inputClass(Boolean(error))}>
           <option value="">Select an option</option>
-          {field.options?.map((option) => <option key={option} value={option}>{option}</option>)}
+          {lookupOptions ? lookupOptions.map((option) => <option key={option.id} value={option.id}>{option.name}{option.location ? ` - ${option.location}` : ''}</option>) : field.options?.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       ) : (
         <input id={id} type={field.type ?? 'text'} value={value} onChange={(event) => onChange(event.target.value)} min={field.min} max={field.max} aria-invalid={Boolean(error)} aria-describedby={describedBy} className={inputClass(Boolean(error))} placeholder={field.placeholder} autoComplete={field.type === 'password' ? 'new-password' : undefined} />
@@ -63,14 +65,49 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
   const [marketingConsent, setMarketingConsent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState('');
+  const [staffMethod, setStaffMethod] = useState<'INVITATION' | 'JOIN_REQUEST'>('INVITATION');
+  const [hospitals, setHospitals] = useState<LookupOption[]>([]);
+  const [departments, setDepartments] = useState<LookupOption[]>([]);
+  const [invitationContext, setInvitationContext] = useState<InvitationContext | null>(null);
   const reviewStep = config.steps.length;
   const isReview = step === reviewStep;
   const totalSteps = config.steps.length + 1;
-  const currentFields = config.steps[step]?.fields ?? [];
+  const rawCurrentFields = config.steps[step]?.fields ?? [];
+  const isHospitalStaff = config.role === 'specialist' || config.role === 'nurse';
+  const isMembershipStep = isHospitalStaff && config.steps[step]?.title === 'Hospital membership';
+  const invitationFields = new Set(['invitation_token']);
+  const requestFields = new Set(['registered_hospital_id', 'department_id', 'staff_role']);
+  const currentFields = isMembershipStep
+    ? rawCurrentFields.filter((field) => staffMethod === 'INVITATION' ? !requestFields.has(field.name) && (invitationFields.has(field.name) || !['employment_type', 'employee_number', 'work_start_date'].includes(field.name)) : !invitationFields.has(field.name))
+    : rawCurrentFields;
   const allFields = useMemo(() => config.steps.flatMap((item) => item.fields), [config.steps]);
+
+  useEffect(() => {
+    if (!isHospitalStaff) return;
+    const invite = new URLSearchParams(window.location.search).get('invite');
+    if (invite) setValues((current) => ({ ...current, invitation_token: invite }));
+  }, [isHospitalStaff]);
+
+  useEffect(() => {
+    if (!isHospitalStaff || staffMethod !== 'JOIN_REQUEST') return;
+    void api.get('/api/v1/signup/registered-hospitals').then((response) => {
+      const items = (response as { items?: LookupOption[] }).items;
+      setHospitals(Array.isArray(items) ? items : []);
+    }).catch(() => setServerError('Unable to load registered hospitals.'));
+  }, [isHospitalStaff, staffMethod]);
+
+  useEffect(() => {
+    const hospitalId = values.registered_hospital_id;
+    if (!hospitalId || staffMethod !== 'JOIN_REQUEST') { setDepartments([]); return; }
+    void api.get(`/api/v1/signup/registered-hospitals/${hospitalId}/departments`).then((response) => {
+      const items = (response as { items?: LookupOption[] }).items;
+      setDepartments(Array.isArray(items) ? items : []);
+    }).catch(() => setServerError('Unable to load hospital departments.'));
+  }, [staffMethod, values.registered_hospital_id]);
 
   function update(name: string, value: string) {
     setValues((current) => ({ ...current, [name]: value }));
+    if (name === 'invitation_token') setInvitationContext(null);
     setErrors((current) => ({ ...current, [name]: '' }));
   }
 
@@ -85,8 +122,20 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
     return Object.keys(nextErrors).length === 0;
   }
 
-  function next() {
+  async function next() {
     if (!validateCurrent()) return;
+    if (isMembershipStep && staffMethod === 'INVITATION' && !invitationContext) {
+      setServerError('');
+      try {
+        const context = await api.post('/api/v1/signup/invitations/validate', { token: values.invitation_token, role: config.role, email: values.email }) as InvitationContext & { valid: boolean };
+        setInvitationContext(context);
+        return;
+      } catch (caught) {
+        setInvitationContext(null);
+        setServerError(caught instanceof Error ? caught.message : 'Unable to validate this invitation.');
+        return;
+      }
+    }
     setStep((current) => Math.min(current + 1, reviewStep));
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -100,6 +149,7 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
     setServerError('');
     const common: Record<string, unknown> = { accept_terms: acceptTerms, accept_privacy: acceptPrivacy, marketing_consent: marketingConsent, consent_version: '2026-07' };
     const data: Record<string, string> = {};
+    if (isHospitalStaff) data.onboarding_method = staffMethod;
     for (const [key, value] of Object.entries(values)) {
       if (topLevelFields.has(key)) common[key] = value || undefined;
       else data[key] = value;
@@ -132,11 +182,19 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
       <section className="mt-5 rounded-2xl border border-[#dbe2dc] bg-[#f8f9f5] p-5 sm:p-8">
         {!isReview ? (
           <>
+            {isMembershipStep ? (
+              <div className="mb-6 grid gap-3 sm:grid-cols-2" role="group" aria-label="Hospital membership method">
+                <button type="button" onClick={() => { setStaffMethod('INVITATION'); setInvitationContext(null); setServerError(''); setValues((current) => ({ ...current, registered_hospital_id: '', department_id: '', staff_role: '' })); }} className={`min-h-14 rounded-xl border px-4 text-sm font-bold transition ${staffMethod === 'INVITATION' ? 'border-[#0b5d4b] bg-[#e9f6f1] text-[#0b5d4b]' : 'border-[#dbe2dc] bg-white text-[#60706a]'}`}>Accept hospital invitation</button>
+                <button type="button" onClick={() => { setStaffMethod('JOIN_REQUEST'); setInvitationContext(null); setServerError(''); setValues((current) => ({ ...current, invitation_token: '' })); }} className={`min-h-14 rounded-xl border px-4 text-sm font-bold transition ${staffMethod === 'JOIN_REQUEST' ? 'border-[#0b5d4b] bg-[#e9f6f1] text-[#0b5d4b]' : 'border-[#dbe2dc] bg-white text-[#60706a]'}`}>Request to join an existing hospital</button>
+              </div>
+            ) : null}
             <h2 className="text-2xl font-black text-[#10231e]">{config.steps[step].title}</h2>
             <p className="mt-2 text-sm leading-6 text-[#60706a]">{config.steps[step].description}</p>
             <div className="mt-7 grid gap-5 sm:grid-cols-2">
-              {currentFields.map((field) => <FieldControl key={field.name} field={field} value={values[field.name] ?? ''} error={errors[field.name]} onChange={(value) => update(field.name, value)} />)}
+              {currentFields.map((field) => <FieldControl key={field.name} field={field} value={values[field.name] ?? ''} error={errors[field.name]} onChange={(value) => { update(field.name, value); if (field.name === 'registered_hospital_id') update('department_id', ''); }} lookupOptions={field.name === 'registered_hospital_id' ? hospitals : field.name === 'department_id' ? departments : undefined} />)}
             </div>
+            {isMembershipStep && staffMethod === 'JOIN_REQUEST' ? <p className="mt-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Your personal account will be created, but hospital access remains disabled until the hospital approves this membership.</p> : null}
+            {isMembershipStep && invitationContext ? <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><p className="font-bold">Invitation verified</p><p className="mt-1">{invitationContext.hospital_name} · {invitationContext.department_id} · {invitationContext.intended_role}{invitationContext.specialty_id ? ` · ${invitationContext.specialty_id}` : ''}</p><p className="mt-1 text-xs">Hospital, department, role and specialty are protected by the invitation.</p></div> : null}
           </>
         ) : (
           <>
@@ -155,7 +213,7 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
         {serverError ? <p role="alert" className="mt-5 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{serverError}</p> : null}
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
           <button type="button" onClick={() => setStep((current) => Math.max(0, current - 1))} disabled={step === 0 || submitting} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-[#dbe2dc] bg-white px-6 text-sm font-bold text-[#10231e] disabled:opacity-40"><ArrowLeft className="h-4 w-4" />Previous</button>
-          {isReview ? <button type="button" onClick={() => void submit()} disabled={submitting} className="sv-button-dark min-w-48">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{submitting ? 'Submitting...' : 'Submit application'}</button> : <button type="button" onClick={next} className="sv-button-dark min-w-48">Save and continue <ArrowRight className="h-4 w-4" /></button>}
+          {isReview ? <button type="button" onClick={() => void submit()} disabled={submitting} className="sv-button-dark min-w-48">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{submitting ? 'Submitting...' : 'Submit application'}</button> : <button type="button" onClick={() => void next()} className="sv-button-dark min-w-48">Save and continue <ArrowRight className="h-4 w-4" /></button>}
         </div>
       </section>
       <p className="mx-auto mt-5 max-w-2xl text-center text-xs leading-5 text-[#60706a]">Your information is used only for account creation, identity verification and regulatory review. Sensitive signup drafts are kept only in this page session and are not written to browser storage.</p>

@@ -82,6 +82,11 @@ export type SynNotification = {
   title: string;
   body: string;
   is_read: boolean;
+  acknowledged_at?: string | null;
+  requires_acknowledgement?: boolean;
+  event_type?: string;
+  type?: string;
+  appointment_id?: string | null;
   ticket_id: string | null;
   urgency_level?: UrgencyLevel;
   patient_name?: string;
@@ -90,4 +95,3 @@ export type SynNotification = {
 };
 
 export type NetworkState = 'connected' | 'reconnecting' | 'offline';
-

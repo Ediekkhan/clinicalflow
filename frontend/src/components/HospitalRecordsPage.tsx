@@ -179,7 +179,7 @@ export function HospitalRecordsPage({ mode, title, subtitle }: { mode: Mode; tit
           <div className="divide-y divide-slate-100">
             {(filtered as HospitalPatient[]).map((item) => (
               <article key={item.id} className="grid gap-3 p-4 lg:grid-cols-[1.2fr_1fr_.8fr_.8fr_.9fr_.8fr] lg:items-center">
-                <div><p className="font-bold text-slate-900">{item.patient_name}</p><p className="text-sm text-slate-500">{item.card_number ?? 'No card number'}</p></div>
+                <div><p className="font-bold text-slate-900">{item.patient_name}</p><p className="text-sm text-slate-500">{item.card_number ?? 'No card number'}</p>{item.routing_reason ? <p className="mt-1 line-clamp-2 text-xs text-[#60706a]">{item.routing_reason}</p> : null}</div>
                 <div><p className="font-mono text-sm font-bold text-slate-900">{item.ticket_number}</p><p className="text-xs text-slate-500">{formatDate(item.arrival_time)}</p></div>
                 <Badge value={item.urgency} />
                 <span className="text-sm text-slate-700">{item.department ?? item.required_specialty ?? 'Unassigned'}</span>
