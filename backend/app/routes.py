@@ -1534,6 +1534,63 @@ async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depen
         raise HTTPException(status_code=404, detail="Signup application not found")
     return SignupApplicationResponse(id=application.id, reference=application.reference, application_type=application.application_type, onboarding_type=application.onboarding_type, status=application.status, submitted_at=application.submitted_at, login_path=SIGNUP_LOGIN_PATHS[application.application_type], dashboard_path=SIGNUP_DASHBOARD_PATHS[application.application_type] if application.status == "ACTIVE" else None)
 
+
+@router.patch("/platform/signup-applications/{application_id}/review")
+async def review_signup_application(application_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    reviewer = await require_roles(request, session, ADMINISTRATOR_ROLES | {"admin"})
+    payload = await request.json()
+    decision = str(payload.get("decision") or "").upper()
+    if decision not in {"APPROVE", "REJECT"}:
+        raise HTTPException(status_code=422, detail="Decision must be APPROVE or REJECT")
+    application = await session.scalar(select(SignupApplication).where(SignupApplication.id == application_id).with_for_update())
+    if not application or application.application_type not in ORGANIZATION_SIGNUP_TYPES:
+        raise HTTPException(status_code=404, detail="Organization application not found")
+    organization = await session.scalar(select(OrganizationApplication).where(OrganizationApplication.signup_application_id == application.id).with_for_update())
+    if not organization:
+        raise HTTPException(status_code=422, detail="Organization verification record is missing")
+    previous_status = application.status
+    if decision == "REJECT":
+        application.status = "REJECTED"
+        organization.verification_status = "REJECTED"
+        session.add(ApplicationReviewHistory(signup_application_id=application.id, reviewer_account_id=reviewer.id, previous_status=previous_status, new_status=application.status, internal_notes=str(payload.get("reason") or "") or None))
+        await session.commit()
+        return {"id": str(application.id), "status": application.status, "tenant_id": None, "admin_account_id": None}
+    if application.status == "ACTIVE" and application.account_id:
+        admin = await session.get(AuthAccount, application.account_id)
+        return {"id": str(application.id), "status": application.status, "tenant_id": str(admin.tenant_id) if admin else None, "admin_account_id": str(application.account_id)}
+    data = json.loads(application.payload_json).get("data", {})
+    admin_email = str(data.get("official_email") or application.email or "").strip().lower()
+    if not admin_email or not application.password_hash:
+        raise HTTPException(status_code=422, detail="Approved organizations require administrator email and password")
+    existing = await session.scalar(select(AuthAccount).where(func.lower(AuthAccount.identifier) == admin_email))
+    if existing:
+        raise HTTPException(status_code=409, detail="Administrator account already exists")
+    tenant = Tenant(name=organization.legal_name, state_location=str(data.get("jurisdiction") or data.get("state") or application.country), latitude=organization.latitude, longitude=organization.longitude, accepts_patients=application.application_type in {"hospital", "clinic"}, status="ACTIVE")
+    session.add(tenant)
+    await session.flush()
+    facility = await ensure_facility_registry(session, tenant)
+    facility.facility_type = {"clinic": "CLINIC", "pharmacy": "PHARMACY", "laboratory": "LABORATORY", "hmo": "PAYER", "government": "GOVERNMENT"}.get(application.application_type, "HOSPITAL")
+    facility.country = application.country
+    facility.jurisdiction = tenant.state_location
+    facility.status = "ACTIVE"
+    facility.accepts_patients = tenant.accepts_patients
+    department_name = str(payload.get("default_department") or "Administration").strip() or "Administration"
+    department = HospitalDepartment(hospital_id=tenant.id, name=department_name, code=f"ADMIN-{tenant.id.hex[:8].upper()}", status="ACTIVE")
+    session.add(department)
+    name_parts = str(data.get("administrator_name") or data.get("full_name") or "Facility Administrator").strip().split(maxsplit=1)
+    admin_role = "hospital_admin" if application.application_type in {"hospital", "clinic"} else "admin"
+    admin = AuthAccount(tenant_id=tenant.id, role=admin_role, identifier=admin_email, password_hash=application.password_hash, first_name=name_parts[0], last_name=name_parts[1] if len(name_parts) > 1 else "", email=admin_email, is_active=True, email_verified_at=utc_now())
+    session.add(admin)
+    await session.flush()
+    membership = StaffMembership(user_id=admin.id, hospital_id=tenant.id, department_id=department.name, department_ref_id=department.id, role=admin_role, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, is_on_duty=True, active_from=utc_now())
+    session.add(membership)
+    application.account_id = admin.id
+    application.status = "ACTIVE"
+    organization.verification_status = "VERIFIED"
+    session.add(ApplicationReviewHistory(signup_application_id=application.id, reviewer_account_id=reviewer.id, previous_status=previous_status, new_status=application.status, internal_notes=str(payload.get("reason") or "") or None))
+    await session.commit()
+    return {"id": str(application.id), "status": application.status, "tenant_id": str(tenant.id), "admin_account_id": str(admin.id), "membership_id": str(membership.id)}
+
 @router.get("/public/pricing")
 async def public_pricing() -> dict[str, Any]:
     return {"plans": [

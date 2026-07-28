@@ -203,3 +203,50 @@ def test_staff_invitation_fixes_hospital_department_role_and_specialty() -> None
     assert membership.role == "doctor"
     assert membership.specialty_id == "Cardiology"
     assert membership.is_active is False
+async def seed_platform_reviewer() -> tuple[str, str]:
+    from app.models import AuthAccount, Tenant
+    from app.services.auth_service import create_session, hash_password
+
+    async with app.state.session_factory() as session:
+        tenant = Tenant(id=uuid4(), name="Platform Review Workspace", state_location="Platform", status="ACTIVE")
+        session.add(tenant)
+        await session.flush()
+        account = AuthAccount(tenant_id=tenant.id, role="admin", identifier=f"reviewer-{uuid4().hex}@example.org", password_hash=hash_password("StrongPass1"), first_name="Platform", last_name="Reviewer", email=f"reviewer-{uuid4().hex}@example.org", is_active=True)
+        session.add(account)
+        await session.flush()
+        issued = await create_session(session, account)
+        await session.commit()
+        return issued.access_token, issued.refresh_token
+
+
+def test_platform_approval_provisions_facility_admin_workspace() -> None:
+    suffix = uuid4().hex[:8]
+    payload = common_payload(suffix)
+    admin_email = f"facility-admin-{suffix}@hospital.org"
+    payload["data"] = {
+        "legal_name": f"Provisioned Hospital {suffix}",
+        "registration_number": f"REG-{suffix}",
+        "licence_number": f"LIC-{suffix}",
+        "regulatory_authority": "Health Facilities Authority",
+        "official_email": admin_email,
+        "administrator_name": "Provisioned Administrator",
+        "latitude": "5.2",
+        "longitude": "7.5",
+    }
+    with TestClient(app) as client:
+        application = client.post("/api/v1/signup/hospital", json=payload)
+        assert application.status_code == 201, application.text
+        access_token, refresh_token = asyncio.run(seed_platform_reviewer())
+        client.cookies.set("synaptiverse_access", access_token)
+        client.cookies.set("synaptiverse_refresh", refresh_token)
+        approved = client.patch(f"/api/v1/platform/signup-applications/{application.json()['id']}/review", json={"decision": "APPROVE"})
+        assert approved.status_code == 200, approved.text
+        client.cookies.clear()
+        login = client.post("/api/v1/auth/hospital_admin/login", json={"email": admin_email, "password": "StrongPass1"})
+        hospitals = client.get("/api/v1/signup/registered-hospitals")
+    body = approved.json()
+    assert body["status"] == "ACTIVE"
+    assert body["tenant_id"]
+    assert login.status_code == 200, login.text
+    assert login.json()["tenant_id"] == body["tenant_id"]
+    assert any(item["id"] == body["tenant_id"] for item in hospitals.json()["items"])
