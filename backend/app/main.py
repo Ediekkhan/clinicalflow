@@ -23,6 +23,7 @@ from app.services.knowledge_graph import SYMPTOM_ALIASES
 from app.services.registry_service import ensure_facility_registry
 from app.services.country_policy import ensure_nigeria_country_pack
 from app.services.redis_service import RedisInfrastructure
+from app.services.outbox_worker import OutboxWorker, worker_status
 from uuid import UUID
 
 
@@ -201,7 +202,10 @@ async def lifespan(app: FastAPI):
         cache=app.state.redis,
     )
     await app.state.knowledge_graph.start()
+    app.state.outbox_worker = OutboxWorker(app.state.session_factory)
+    await app.state.outbox_worker.start()
     yield
+    await app.state.outbox_worker.stop()
     await app.state.knowledge_graph.close()
     await app.state.redis.close()
     triage_manager.broker = None
@@ -249,12 +253,23 @@ async def structured_request_logging(request, call_next):
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
+    database_status = "connected"
+    outbox_pending = None
+    try:
+        async with app.state.session_factory() as session:
+            await session.execute(text("SELECT 1"))
+            outbox_pending = (await session.scalar(text("SELECT COUNT(*) FROM outbox_events WHERE status = 'PENDING'"))) or 0
+    except Exception:
+        database_status = "unavailable"
     return {
-        "status": "ok",
+        "status": "ok" if database_status == "connected" else "degraded",
         "service": "synaptiverse",
         "dependencies": {
+            "database": database_status,
             "redis": "connected" if app.state.redis.available else "degraded-local",
             "neo4j": "connected" if app.state.knowledge_graph.available else "degraded-fallback",
+            "worker": worker_status(getattr(app.state, "outbox_worker", None)),
+            "outbox_pending": outbox_pending,
         },
     }
 
@@ -263,3 +278,4 @@ async def health() -> dict[str, Any]:
 async def metrics() -> Response:
     body = "\n".join([f"synaptiverse_requests_total {request_metrics['requests_total']}", f"synaptiverse_errors_total {request_metrics['errors_total']}"]) + "\n"
     return Response(content=body, media_type="text/plain; version=0.0.4")
+
