@@ -12,3 +12,11 @@ pydantic-settings>=2.10,<3
 # Test dependencies
 pytest>=9.1,<10
 httpx2>=2.7,<3
+
+# Optional production provider SDKs
+twilio>=9.0,<10
+sendgrid>=6.11,<7
+boto3>=1.35,<2
+firebase-admin>=6.5,<7
+stripe>=11,<12
+fhir.resources>=7.1,<8
