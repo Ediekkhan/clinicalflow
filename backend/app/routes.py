@@ -935,7 +935,7 @@ async def persist_ticket(
         urgency_level=clinical_route.derived_urgency,
         matched_condition_id=clinical_route.condition_id,
         assigned_specialty=clinical_route.target_specialty,
-        queue_status="QUEUED",
+        queue_status="AWAITING_FACILITY_ACCEPTANCE",
         appointment_slot=payload.appointment_slot,
         patient_latitude=patient_latitude,
         patient_longitude=patient_longitude,
@@ -3030,6 +3030,8 @@ FACILITY_DECISION_STATES = {
 }
 QUEUE_TRANSITIONS = {
     "ACCEPTED": {"TRAVELLING", "ARRIVED", "CANCELLED"},
+    "REJECTED": {"AWAITING_CLINICAL_REVIEW"},
+    "REDIRECTED": {"AWAITING_FACILITY_ACCEPTANCE"},
     "TRAVELLING": {"ARRIVED", "CANCELLED"},
     "ARRIVED": {"CHECKED_IN", "CANCELLED"},
     "CHECKED_IN": {"WAITING_FOR_NURSE", "WAITING_FOR_DOCTOR", "CANCELLED"},
@@ -3047,8 +3049,8 @@ async def facility_ticket_decision(ticket_id: str, request: Request, session: As
     reason = str(payload.get("reason") or "").strip()
     if decision not in FACILITY_DECISION_STATES:
         raise HTTPException(status_code=422, detail="Decision must be ACCEPT, REJECT, or REDIRECT")
-    if decision in {"REJECT", "REDIRECT"} and len(reason) < 3:
-        raise HTTPException(status_code=422, detail="A reason is required for rejection or redirection")
+    if decision in {"REJECT", "REDIRECT"} and len(reason) < 10:
+        raise HTTPException(status_code=422, detail="A clear reason is required for rejection or redirection")
     ticket = await session.scalar(select(Ticket).where(Ticket.id == uuid.UUID(ticket_id), Ticket.routed_tenant_id == membership.hospital_id).with_for_update())
     if not ticket:
         raise HTTPException(status_code=404, detail="Routed ticket not found")
@@ -3061,11 +3063,14 @@ async def facility_ticket_decision(ticket_id: str, request: Request, session: As
         except (TypeError, ValueError) as error:
             raise HTTPException(status_code=422, detail="A valid redirect facility is required") from error
         destination = await session.get(Tenant, redirected_id)
-        if not destination or destination.status != "ACTIVE" or destination.id == membership.hospital_id:
-            raise HTTPException(status_code=422, detail="Redirect facility must be a different active registered facility")
+        destination_registry = await session.scalar(select(FacilityRegistry).where(FacilityRegistry.tenant_id == redirected_id))
+        if not destination or destination.status != "ACTIVE" or destination.id == membership.hospital_id or not destination_registry or destination_registry.status != "ACTIVE" or not destination_registry.accepts_patients:
+            raise HTTPException(status_code=422, detail="Redirect facility must be a different active registered facility that accepts patients")
     previous = ticket.queue_status
     next_status = FACILITY_DECISION_STATES[decision]
-    ticket.queue_status = next_status
+    ticket.queue_status = "AWAITING_FACILITY_ACCEPTANCE" if decision == "REDIRECT" else next_status
+    if decision == "REDIRECT" and redirected_id:
+        ticket.routed_tenant_id = redirected_id
     ticket.version += 1
     session.add(FacilityAcceptance(ticket_id=ticket.id, facility_id=membership.hospital_id, actor_account_id=account.id, actor_membership_id=membership.id, decision=decision, previous_status=previous, next_status=next_status, reason=reason or None, redirected_facility_id=redirected_id))
     session.add(OutboxEvent(tenant_id=membership.hospital_id, aggregate_type="Ticket", aggregate_id=ticket.id, event_type=f"facility.{decision.lower()}", payload_json=json.dumps({"ticket_id": str(ticket.id), "decision": decision, "redirected_facility_id": str(redirected_id) if redirected_id else None}), classification="RESTRICTED", status="PENDING"))
