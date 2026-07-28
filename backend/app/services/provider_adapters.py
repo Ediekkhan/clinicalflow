@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import httpx
+
 
 class ProviderNotConfigured(RuntimeError):
     pass
@@ -29,9 +31,15 @@ class ConfiguredProvider:
     async def deliver(self, *, recipient: str, payload: dict[str, Any], idempotency_key: str) -> str:
         if not self.configured:
             raise ProviderNotConfigured(f"{self.channel} provider is not configured")
-        # Provider-specific HTTP clients belong behind this contract. Credentials are
-        # read from the environment and never persisted in notifications or outbox data.
-        raise NotImplementedError(f"{self.channel} provider adapter requires its provider SDK")
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                self.endpoint,
+                headers={"authorization": f"Bearer {self.api_key}", "idempotency-key": idempotency_key},
+                json={"recipient": recipient, "payload": payload},
+            )
+            response.raise_for_status()
+            body = response.json()
+            return str(body.get("id") or body.get("message_id") or idempotency_key)
 
 
 def provider_registry() -> dict[str, ConfiguredProvider]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models import OutboxEvent
+from app.services.provider_adapters import ProviderNotConfigured, provider_registry
 
 
 class OutboxWorker:
@@ -59,9 +61,19 @@ class OutboxWorker:
             return len(events)
 
     async def _process_event(self, session: AsyncSession, event: OutboxEvent) -> None:
-        # Delivery providers consume this durable record; no PHI is added here.
         event.attempts += 1
         try:
+            payload = json.loads(event.payload_json or "{}")
+            channel = str(payload.get("channel") or "").upper()
+            if channel:
+                provider = provider_registry().get(channel)
+                if provider is None:
+                    raise ProviderNotConfigured(f"Unsupported delivery channel: {channel}")
+                await provider.deliver(
+                    recipient=str(payload.get("recipient") or event.recipient_user_id or ""),
+                    payload=dict(payload.get("message") or {}),
+                    idempotency_key=str(event.id),
+                )
             event.status = "PROCESSED"
             event.processed_at = datetime.now(UTC)
             event.last_error = None
