@@ -174,10 +174,11 @@ async def lifespan(app: FastAPI):
             await conn.run_sync(Base.metadata.create_all)
         if app.state.engine.dialect.name == "sqlite":
             await ensure_sqlite_additive_schema(app.state.engine)
-    async with app.state.session_factory() as session:
-        await seed_demo_accounts(session)
-    async with app.state.session_factory() as session:
-        await seed_demo_schedule(session, UUID(settings.default_tenant_id))
+    if settings.fixtures_enabled:
+        async with app.state.session_factory() as session:
+            await seed_demo_accounts(session)
+        async with app.state.session_factory() as session:
+            await seed_demo_schedule(session, UUID(settings.default_tenant_id))
     async with app.state.session_factory() as session:
         await seed_facility_registry_compatibility(session)
     async with app.state.session_factory() as session:

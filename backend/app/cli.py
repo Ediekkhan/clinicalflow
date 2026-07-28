@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
+from app.services.demo_cleanup import build_demo_manifest, dry_run_demo_cleanup
 from app.services.terminology_import import (
     TerminologyImportError,
     checksum_bytes,
@@ -49,6 +50,11 @@ def parser() -> argparse.ArgumentParser:
     rollback = commands.add_parser("rollback")
     rollback.add_argument("--release-id", required=True)
     rollback.add_argument("--to-release-id", required=True)
+    production = groups.add_parser("production")
+    production_commands = production.add_subparsers(dest="command", required=True)
+    production_commands.add_parser("audit-demo-data")
+    remove_demo = production_commands.add_parser("remove-demo-data")
+    remove_demo.add_argument("--dry-run", action="store_true", required=True)
     return root
 
 
@@ -57,6 +63,11 @@ async def execute(args: argparse.Namespace) -> dict:
     factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with factory() as session:
+            if args.group == "production":
+                if args.command == "audit-demo-data":
+                    return await build_demo_manifest(session)
+                if args.command == "remove-demo-data":
+                    return await dry_run_demo_cleanup(session)
             if args.command.startswith("import-") and args.command != "import-local":
                 if args.command == "import-icd11" and not os.getenv("WHO_ICD11_CLIENT_ID"):
                     raise TerminologyImportError("WHO_ICD11_CLIENT_ID is required for ICD-11 imports")

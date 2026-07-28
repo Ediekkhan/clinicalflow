@@ -436,6 +436,8 @@ async def login(role: str, payload: AuthLoginRequest, request: Request, response
 
 @router.post("/auth/staff/pin-login", response_model=AuthSessionResponse)
 async def pin_login(payload: PinLoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthSessionResponse:
+    if not settings.fixtures_enabled:
+        raise HTTPException(status_code=404, detail="Authentication route not found")
     await enforce_rate_limit(request, "auth-login", settings.auth_rate_limit)
     identifier = f"uyo-family:{payload.role}"
     account = await find_account(session, payload.role, identifier, uuid.UUID(settings.default_tenant_id))
@@ -445,6 +447,8 @@ async def pin_login(payload: PinLoginRequest, request: Request, response: Respon
 
 @router.post("/auth/hospital/account-login", response_model=AuthSessionResponse)
 async def hospital_login(payload: HospitalLoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthSessionResponse:
+    if not settings.fixtures_enabled:
+        raise HTTPException(status_code=404, detail="Authentication route not found")
     await enforce_rate_limit(request, "auth-login", settings.auth_rate_limit)
     identifier = f"{payload.hospital_code.strip().lower()}:{payload.role}"
     account = await find_account(session, payload.role, identifier, uuid.UUID(settings.default_tenant_id))
@@ -1521,10 +1525,7 @@ async def public_blog_posts() -> list[dict[str, str]]:
 
 @router.get("/public/testimonials")
 async def public_testimonials() -> list[dict[str, str]]:
-    return [
-        {"id": "demo-1", "initials": "IA", "name": "Demo Clinic Lead", "role": "Uyo pilot persona", "quote": "One queue view gives our front desk and nurses the same operational picture."},
-        {"id": "demo-2", "initials": "BO", "name": "Demo Medical Director", "role": "Lagos pilot persona", "quote": "The live ticket makes waiting clearer for patients without exposing clinical details."},
-    ]
+    return []
 
 @router.post("/public/demo-requests", response_model=DemoRequestResponse, status_code=201)
 async def create_demo_request(payload: DemoRequestCreate, session: AsyncSession = Depends(get_db)) -> DemoRequestResponse:
