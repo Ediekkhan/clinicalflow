@@ -24,6 +24,7 @@ from app.services.registry_service import ensure_facility_registry
 from app.services.country_policy import ensure_nigeria_country_pack
 from app.services.redis_service import RedisInfrastructure
 from app.services.outbox_worker import OutboxWorker, worker_status
+from app.services.provider_adapters import provider_health
 from uuid import UUID
 
 
@@ -270,6 +271,7 @@ async def health() -> dict[str, Any]:
             "neo4j": "connected" if app.state.knowledge_graph.available else "degraded-fallback",
             "worker": worker_status(getattr(app.state, "outbox_worker", None)),
             "outbox_pending": outbox_pending,
+            "providers": provider_health(),
         },
     }
 
