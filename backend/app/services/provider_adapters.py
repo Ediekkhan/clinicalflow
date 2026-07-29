@@ -11,6 +11,22 @@ class ProviderNotConfigured(RuntimeError):
     pass
 
 
+def provider_payload(channel: str, *, recipient: str, message: str, subject: str | None = None, sender: str | None = None) -> dict[str, Any]:
+    """Build provider-shaped, minimum-necessary payloads without clinical detail."""
+    channel = channel.upper()
+    if channel == "SMS":
+        return {"To": recipient, "From": sender, "Body": message}
+    if channel == "EMAIL":
+        return {"personalizations": [{"to": [{"email": recipient}]}], "from": {"email": sender or "no-reply@example.invalid"}, "subject": subject or "SynaptiVerse notification", "content": [{"type": "text/plain", "value": message}]}
+    if channel == "PUSH":
+        return {"message": {"token": recipient, "notification": {"title": subject or "SynaptiVerse", "body": message}}}
+    if channel == "WHATSAPP":
+        return {"messaging_product": "whatsapp", "to": recipient, "type": "text", "text": {"preview_url": False, "body": message}}
+    if channel == "STORAGE":
+        return {"object_key": recipient, "content_type": subject or "application/octet-stream"}
+    raise ValueError(f"Unsupported provider channel: {channel}")
+
+
 class DeliveryProvider(Protocol):
     channel: str
 
@@ -40,6 +56,15 @@ class ConfiguredProvider:
             response.raise_for_status()
             body = response.json()
             return str(body.get("id") or body.get("message_id") or idempotency_key)
+
+
+def provider_headers(channel: str, api_key: str) -> dict[str, str]:
+    """Return common auth headers; provider-specific endpoints can override them."""
+    if channel.upper() == "SMS":
+        return {"authorization": f"Basic {api_key}"}
+    if channel.upper() == "WHATSAPP":
+        return {"authorization": f"Bearer {api_key}"}
+    return {"authorization": f"Bearer {api_key}"}
 
 
 def provider_registry() -> dict[str, ConfiguredProvider]:

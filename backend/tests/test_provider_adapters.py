@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 
-from app.services.provider_adapters import ConfiguredProvider, ProviderNotConfigured
+from app.services.provider_adapters import ConfiguredProvider, ProviderNotConfigured, provider_payload
 
 
 def test_unconfigured_provider_fails_closed() -> None:
@@ -18,3 +18,13 @@ def test_provider_health_reports_configuration_without_exposing_secrets(monkeypa
     health = provider_health()
     assert health["email"] == "configured"
     assert "secret-value" not in str(health)
+
+
+@pytest.mark.parametrize(
+    ("channel", "expected"),
+    [("SMS", "Body"), ("EMAIL", "personalizations"), ("PUSH", "message"), ("WHATSAPP", "messaging_product")],
+)
+def test_provider_payloads_are_channel_specific(channel: str, expected: str) -> None:
+    payload = provider_payload(channel, recipient="recipient", message="Your appointment is confirmed", subject="Update")
+    assert expected in payload
+    assert "diagnosis" not in str(payload).lower()
