@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     enable_imaging_module: bool = False
     enable_billing_module: bool = False
     enable_hackathon_providers: bool = False
+    skip_phone_verification: bool = False
     default_credentials_present: bool = False
     log_level: str = "INFO"
     audit_retention_days: int = 365

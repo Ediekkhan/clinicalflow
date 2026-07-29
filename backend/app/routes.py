@@ -1325,7 +1325,19 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
     for consent_type, accepted in (("TERMS", payload.accept_terms), ("PRIVACY", payload.accept_privacy), ("MARKETING", payload.marketing_consent)):
         session.add(ConsentRecord(signup_application_id=application.id, consent_type=consent_type, policy_version=payload.consent_version, accepted=accepted, ip_address=request.client.host if request.client else None))
     session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status=None, new_status=application.status))
-    if role == "patient":
+    if role == "patient" and settings.skip_phone_verification:
+        data = json.loads(application.payload_json)
+        date_of_birth = datetime.fromisoformat(data["data"]["date_of_birth"]) if data.get("data", {}).get("date_of_birth") else None
+        duplicate_key = patient_duplicate_key(data.get("first_name", ""), data.get("last_name", ""), date_of_birth)
+        if await session.scalar(select(PatientRegistry).where(PatientRegistry.duplicate_key == duplicate_key).limit(1)):
+            raise HTTPException(status_code=409, detail="A matching patient identity already exists and requires duplicate review")
+        account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
+        session.add(account)
+        await session.flush()
+        await ensure_patient_registry(session, account)
+        application.account_id, application.status = account.id, "ACTIVE"
+        session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status="PHONE_VERIFICATION_REQUIRED", new_status="ACTIVE"))
+    elif role == "patient":
         verification_code = f"{secrets.randbelow(1_000_000):06d}"
         session.add(VerificationEvent(signup_application_id=application.id, event_type="PHONE_OTP", status="PENDING", token_hash=token_hash(verification_code), expires_at=utc_now() + timedelta(minutes=10)))
         session.add(OutboxEvent(
