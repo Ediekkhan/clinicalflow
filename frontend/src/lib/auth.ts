@@ -22,6 +22,19 @@ function getApiBase() {
   return CONFIGURED_API_BASE;
 }
 
+function alternateApiBase(base: string) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const alternate = new URL(base);
+    if (alternate.hostname === 'localhost') alternate.hostname = '127.0.0.1';
+    else if (alternate.hostname === '127.0.0.1') alternate.hostname = 'localhost';
+    else return null;
+    return alternate.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
 function loginPathFor(pathname: string) {
   if (pathname.startsWith('/hospital')) return '/hospital/login';
   if (pathname.startsWith('/specialist')) return '/specialist/login';
@@ -67,7 +80,7 @@ function refreshSessionOnce(): Promise<boolean> {
 async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object, retry = true) {
   const isAuthenticationRequest = url.startsWith('/api/v1/auth/');
 
-  const response = await fetch(`${getApiBase()}${url}`, {
+  const requestInit: RequestInit = {
     method,
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
@@ -75,7 +88,20 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
     credentials: 'include',
     body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
-  });
+  };
+  const base = getApiBase();
+  let response: Response;
+  try {
+    response = await fetch(`${base}${url}`, requestInit);
+  } catch (error) {
+    const fallback = alternateApiBase(base);
+    if (!fallback) throw new Error('Unable to reach the healthcare service. Check that the backend is running.');
+    try {
+      response = await fetch(`${fallback}${url}`, requestInit);
+    } catch {
+      throw new Error('Unable to reach the healthcare service. Check that the backend is running.');
+    }
+  }
 
   if (response.status === 401 && retry && !isAuthenticationRequest) {
     const refreshed = await refreshSessionOnce();
