@@ -1286,7 +1286,7 @@ def _validate_signup(role: str, payload: SignupApplicationCreate, invitation: St
             raise HTTPException(status_code=422, detail="Requested administrator role exceeds the invitation scope")
 
 
-async def _create_signup(role: str, payload: SignupApplicationCreate, request: Request, session: AsyncSession) -> SignupApplicationResponse:
+async def _create_signup(role: str, payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession) -> SignupApplicationResponse:
     invitation = await _validated_invitation(session, role, payload.invitation_token, payload.email)
     _validate_signup(role, payload, invitation)
     destination_hospital = None
@@ -1387,48 +1387,56 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
         if document.get("content_type") not in {"application/pdf", "image/jpeg", "image/png"} or not 1 <= int(document.get("size_bytes", 0)) <= 10_000_000:
             raise HTTPException(status_code=422, detail="Verification document type or size is not allowed")
         session.add(VerificationDocument(signup_application_id=application.id, document_type=document.get("document_type", "OTHER"), private_storage_key=document["private_storage_key"], original_name=document.get("original_name", "document"), content_type=document["content_type"], size_bytes=int(document["size_bytes"])))
+    issued = None
+    if application.status == "ACTIVE" and application.account_id:
+        account = await session.get(AuthAccount, application.account_id)
+        if account:
+            issued = await create_session(session, account, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"))
     await session.commit()
-    return SignupApplicationResponse(id=application.id, reference=application.reference, application_type=role, onboarding_type=application.onboarding_type, status=application.status, submitted_at=application.submitted_at, login_path=SIGNUP_LOGIN_PATHS[role], dashboard_path=None)
+    if issued:
+        response.set_cookie(ACCESS_COOKIE, issued.access_token, httponly=True, samesite="lax", secure=settings.environment == "production")
+        response.set_cookie(REFRESH_COOKIE, issued.refresh_token, httponly=True, samesite="lax", secure=settings.environment == "production")
+    return SignupApplicationResponse(id=application.id, reference=application.reference, application_type=role, onboarding_type=application.onboarding_type, status=application.status, submitted_at=application.submitted_at, login_path=SIGNUP_LOGIN_PATHS[role], dashboard_path=SIGNUP_DASHBOARD_PATHS[role] if application.status == "ACTIVE" else None)
 
 @router.post("/signup/patient", response_model=SignupApplicationResponse, status_code=201)
-async def signup_patient(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("patient", payload, request, session)
+async def signup_patient(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("patient", payload, request, response, session)
 
 @router.post("/signup/specialist", response_model=SignupApplicationResponse, status_code=201)
-async def signup_specialist(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("specialist", payload, request, session)
+async def signup_specialist(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("specialist", payload, request, response, session)
 
 @router.post("/signup/hospital", response_model=SignupApplicationResponse, status_code=201)
-async def signup_hospital(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("hospital", payload, request, session)
+async def signup_hospital(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("hospital", payload, request, response, session)
 
 @router.post("/signup/clinic", response_model=SignupApplicationResponse, status_code=201)
-async def signup_clinic(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("clinic", payload, request, session)
+async def signup_clinic(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("clinic", payload, request, response, session)
 
 @router.post("/signup/nurse", response_model=SignupApplicationResponse, status_code=201)
-async def signup_nurse(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("nurse", payload, request, session)
+async def signup_nurse(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("nurse", payload, request, response, session)
 
 @router.post("/signup/pharmacy", response_model=SignupApplicationResponse, status_code=201)
-async def signup_pharmacy(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("pharmacy", payload, request, session)
+async def signup_pharmacy(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("pharmacy", payload, request, response, session)
 
 @router.post("/signup/laboratory", response_model=SignupApplicationResponse, status_code=201)
-async def signup_laboratory(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("laboratory", payload, request, session)
+async def signup_laboratory(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("laboratory", payload, request, response, session)
 
 @router.post("/signup/hmo", response_model=SignupApplicationResponse, status_code=201)
-async def signup_hmo(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("hmo", payload, request, session)
+async def signup_hmo(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("hmo", payload, request, response, session)
 
 @router.post("/signup/government", response_model=SignupApplicationResponse, status_code=201)
-async def signup_government(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("government", payload, request, session)
+async def signup_government(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("government", payload, request, response, session)
 
 @router.post("/signup/platform-admin", response_model=SignupApplicationResponse, status_code=201)
-async def signup_platform_admin(payload: SignupApplicationCreate, request: Request, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _create_signup("platform-admin", payload, request, session)
+async def signup_platform_admin(payload: SignupApplicationCreate, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _create_signup("platform-admin", payload, request, response, session)
 
 @router.post("/hospital/staff-invitations", status_code=201)
 async def create_staff_invitation(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:

@@ -43,7 +43,12 @@ export function SignupStatus() {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    api.get(`/api/v1/signup/status/${id}`).then((data) => { if (!cancelled) setApplication(data as StatusResponse); }).catch((caught) => { if (!cancelled) setError(caught instanceof Error ? caught.message : 'Unable to load application status.'); }).finally(() => { if (!cancelled) setLoading(false); });
+    api.get(`/api/v1/signup/status/${id}`).then((data) => {
+      if (cancelled) return;
+      const next = data as StatusResponse;
+      setApplication(next);
+      if (next.status === 'ACTIVE' && next.dashboard_path) router.replace(next.dashboard_path);
+    }).catch((caught) => { if (!cancelled) setError(caught instanceof Error ? caught.message : 'Unable to load application status.'); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [id]);
 
