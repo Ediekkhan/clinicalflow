@@ -114,7 +114,14 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail?.message ?? payload.detail ?? payload.message ?? 'Request failed');
+    const detail = payload.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item) => {
+        const location = Array.isArray(item?.loc) ? item.loc.join('.') : '';
+        return location ? `${location}: ${item.msg ?? 'invalid value'}` : (item.msg ?? 'Invalid request');
+      }).join('; ')
+      : (detail?.message ?? detail ?? payload.message ?? 'Request failed');
+    throw new Error(typeof message === 'string' ? message : JSON.stringify(message));
   }
 
   if (response.status === 204) {
