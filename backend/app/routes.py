@@ -1328,6 +1328,21 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
     if role == "patient":
         verification_code = f"{secrets.randbelow(1_000_000):06d}"
         session.add(VerificationEvent(signup_application_id=application.id, event_type="PHONE_OTP", status="PENDING", token_hash=token_hash(verification_code), expires_at=utc_now() + timedelta(minutes=10)))
+        session.add(OutboxEvent(
+            tenant_id=uuid.UUID(settings.default_tenant_id),
+            aggregate_type="SignupApplication",
+            aggregate_id=application.id,
+            event_type="patient.phone_verification_requested",
+            recipient_user_id=None,
+            payload_json=json.dumps({
+                "channel": "SMS",
+                "recipient": payload.phone,
+                "message": f"Your ClinicalFlow verification code is {verification_code}. It expires in 10 minutes.",
+                "subject": "ClinicalFlow phone verification",
+            }),
+            classification="RESTRICTED",
+            status="PENDING",
+        ))
     if role in ORGANIZATION_SIGNUP_TYPES:
         session.add(OrganizationApplication(signup_application_id=application.id, legal_name=payload.data.get("legal_name", ""), registration_number=payload.data.get("registration_number"), licence_number=payload.data.get("licence_number") or payload.data.get("accreditation_number"), regulatory_authority=payload.data.get("regulatory_authority"), latitude=latitude, longitude=longitude, verification_status=application.status))
     if role in PROFESSIONAL_SIGNUP_TYPES:
