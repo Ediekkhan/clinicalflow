@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { CheckCircle2, Clock3, Loader2, ShieldAlert } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { AuthFrame } from '@/components/auth/AuthFrame';
@@ -32,6 +32,7 @@ const statusCopy: Record<string, { title: string; body: string }> = {
 
 export function SignupStatus() {
   const search = useSearchParams();
+  const router = useRouter();
   const id = search.get('id');
   const [application, setApplication] = useState<StatusResponse | null>(id ? { id, reference: search.get('reference') ?? '', application_type: '', status: search.get('status') ?? 'PENDING_VERIFICATION', login_path: '/login' } : null);
   const [loading, setLoading] = useState(Boolean(id));
@@ -50,7 +51,11 @@ export function SignupStatus() {
     if (!application || code.trim().length < 4) return;
     setVerifying(true);
     setError('');
-    try { setApplication(await api.post('/api/v1/signup/verify-phone', { application_id: application.id, code: code.trim() }) as StatusResponse); }
+    try {
+      const verified = await api.post('/api/v1/signup/verify-phone', { application_id: application.id, code: code.trim() }) as StatusResponse;
+      setApplication(verified);
+      if (verified.status === 'ACTIVE' && verified.dashboard_path) router.replace(verified.dashboard_path);
+    }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to verify this code.'); }
     finally { setVerifying(false); }
   }

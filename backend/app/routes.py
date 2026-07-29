@@ -1492,7 +1492,7 @@ async def validate_signup_invitation(payload: SignupInvitationValidateRequest, s
     hospital = await session.get(Tenant, invitation.hospital_id)
     return {"valid": True, "organization_id": str(invitation.organization_id or invitation.hospital_id), "hospital_name": hospital.name if hospital else None, "department_id": invitation.department_id, "intended_role": invitation.intended_role or invitation.permitted_role, "specialty_id": invitation.specialty_id, "employment_type": invitation.employment_type, "expires_at": invitation.expires_at}
 
-async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSession, event_type: str) -> SignupApplicationResponse:
+async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSession, event_type: str, response: Response | None = None) -> SignupApplicationResponse:
     application = await session.get(SignupApplication, payload.application_id)
     if not application or application.application_type != "patient":
         raise HTTPException(status_code=404, detail="Signup application not found")
@@ -1516,16 +1516,20 @@ async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSess
     for consent in (await session.execute(select(ConsentRecord).where(ConsentRecord.signup_application_id == application.id))).scalars().all():
         consent.account_id = account.id
     session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status="PHONE_VERIFICATION_REQUIRED", new_status="ACTIVE"))
+    issued = await create_session(session, account)
     await session.commit()
+    if response is not None:
+        response.set_cookie(ACCESS_COOKIE, issued.access_token, httponly=True, samesite="lax", secure=settings.environment == "production")
+        response.set_cookie(REFRESH_COOKIE, issued.refresh_token, httponly=True, samesite="lax", secure=settings.environment == "production")
     return SignupApplicationResponse(id=application.id, reference=application.reference, application_type="patient", onboarding_type=application.onboarding_type, status="ACTIVE", submitted_at=application.submitted_at, login_path="/login", dashboard_path="/dashboard")
 
 @router.post("/signup/verify-phone", response_model=SignupApplicationResponse)
-async def verify_signup_phone(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _verify_patient(payload, session, "PHONE_OTP")
+async def verify_signup_phone(payload: SignupVerificationRequest, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _verify_patient(payload, session, "PHONE_OTP", response)
 
 @router.post("/signup/verify-email", response_model=SignupApplicationResponse)
-async def verify_signup_email(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _verify_patient(payload, session, "EMAIL_OTP")
+async def verify_signup_email(payload: SignupVerificationRequest, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _verify_patient(payload, session, "EMAIL_OTP", response)
 
 @router.get("/signup/status/{application_id}", response_model=SignupApplicationResponse)
 async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
@@ -1768,7 +1772,8 @@ async def appointment_response(session: AsyncSession, appointment: Appointment) 
     )
 @router.post("/appointments", response_model=AppointmentResponse, status_code=201)
 async def book_appointment(payload: AppointmentCreate, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
-    requester = await account_for_access_token(session, request.cookies.get(ACCESS_COOKIE)) if request.cookies.get(ACCESS_COOKIE) else None
+    authenticated = await account_for_access_token(session, request.cookies.get(ACCESS_COOKIE)) if request.cookies.get(ACCESS_COOKIE) else None
+    requester = authenticated[0] if authenticated else None
     owner_tenant_id = requester.tenant_id if requester and requester.role == "patient" else uuid.UUID(public_tenant_id())
     await apply_tenant_context(session, owner_tenant_id)
     ticket = await session.scalar(select(Ticket).where(Ticket.id == payload.ticket_id, Ticket.customer_phone == payload.customer_phone).with_for_update())

@@ -10,7 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
-    Accession, AllergyRecord, AuthAccount, CareTeam, CareTeamMember, ClinicalDocument, ClinicalNote, ClinicalObservation, ClinicalPrivilege,
+    Accession, AllergyRecord, Appointment, AuthAccount, CareTeam, CareTeamMember, ClinicalDocument, ClinicalNote, ClinicalObservation, ClinicalPrivilege,
     ConditionRecord, ConsentRecord, CriticalResultAcknowledgement, DiagnosticReport,
     Encounter, FacilityRegistry, FacilityService, LaboratoryOrder, LaboratoryResult, Notification, NotificationDelivery,
     OrderedTest, OutboxEvent, ProvenanceRecord, QualityControlReview, Referral,
@@ -191,6 +191,38 @@ async def start_referred_encounter(referral_id: str, request: Request, session: 
     if not referral: raise HTTPException(status_code=404, detail="Accepted destination referral not found")
     encounter = Encounter(patient_id=referral.patient_id, facility_id=account.tenant_id, referral_id=referral.id, assigned_clinician_id=account.id, encounter_type="REFERRED_CARE")
     session.add(encounter); await session.flush(); await audit(session, request, account, "Encounter", encounter.id, "STARTED", account.tenant_id); await session.commit()
+    return {"id": str(encounter.id), "patient_id": str(encounter.patient_id), "status": encounter.status, "started_at": encounter.started_at}
+
+
+@router.post("/appointments/{appointment_id}/encounter", status_code=201)
+async def start_appointment_encounter(appointment_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, CLINICIAN_ROLES)
+    membership = await verified_membership(session, account)
+    appointment = await session.scalar(select(Appointment).where(
+        Appointment.id == parse_uuid(appointment_id, "appointment_id"),
+        Appointment.hospital_id == membership.hospital_id,
+        Appointment.doctor_id == account.id,
+        Appointment.status == "BOOKED",
+    ))
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Assigned booked appointment not found")
+    existing = await session.scalar(select(Encounter).where(Encounter.appointment_id == appointment.id).order_by(Encounter.started_at.desc()))
+    if existing:
+        return {"id": str(existing.id), "patient_id": str(existing.patient_id), "status": existing.status, "started_at": existing.started_at}
+    patient_id = await session.scalar(select(AuthAccount.id).where(AuthAccount.role == "patient", AuthAccount.phone == appointment.customer_phone))
+    encounter = Encounter(
+        patient_id=patient_id,
+        facility_id=appointment.hospital_id,
+        appointment_id=appointment.id,
+        assigned_clinician_id=account.id,
+        encounter_type="APPOINTMENT",
+    )
+    if not encounter.patient_id:
+        raise HTTPException(status_code=404, detail="Appointment patient account not found")
+    session.add(encounter)
+    await session.flush()
+    await audit(session, request, account, "Encounter", encounter.id, "STARTED", appointment.hospital_id)
+    await session.commit()
     return {"id": str(encounter.id), "patient_id": str(encounter.patient_id), "status": encounter.status, "started_at": encounter.started_at}
 
 
