@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     enable_government_module: bool = False
     enable_imaging_module: bool = False
     enable_billing_module: bool = False
+    enable_hackathon_providers: bool = False
     default_credentials_present: bool = False
     log_level: str = "INFO"
     audit_retention_days: int = 365
@@ -68,8 +69,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_safety(self) -> "Settings":
-        if self.environment not in {"test", "development", "staging", "production"}:
-            raise ValueError("APP_ENV must be test, development, staging, or production")
+        if self.environment not in {"test", "development", "staging", "production", "hackathon"}:
+            raise ValueError("APP_ENV must be test, development, staging, production, or hackathon")
         if self.environment == "production":
             problems = []
             if self.enable_test_fixtures or self.enable_demo_content:

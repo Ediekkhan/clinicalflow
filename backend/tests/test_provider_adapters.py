@@ -28,3 +28,12 @@ def test_provider_payloads_are_channel_specific(channel: str, expected: str) -> 
     payload = provider_payload(channel, recipient="recipient", message="Your appointment is confirmed", subject="Update")
     assert expected in payload
     assert "diagnosis" not in str(payload).lower()
+
+
+def test_hackathon_provider_mode_is_local_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_ENV", "hackathon")
+    monkeypatch.setenv("ENABLE_HACKATHON_PROVIDERS", "true")
+    from app.services.provider_adapters import HackathonSandboxProvider, provider_registry
+
+    providers = provider_registry()
+    assert all(isinstance(provider, HackathonSandboxProvider) for provider in providers.values())

@@ -11,6 +11,19 @@ class ProviderNotConfigured(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class HackathonSandboxProvider:
+    channel: str
+
+    @property
+    def configured(self) -> bool:
+        return True
+
+    async def deliver(self, *, recipient: str, payload: dict[str, Any], idempotency_key: str) -> str:
+        # The sandbox acknowledges delivery locally without contacting an external provider.
+        return f"sandbox-{self.channel.lower()}-{idempotency_key}"
+
+
 def provider_payload(channel: str, *, recipient: str, message: str, subject: str | None = None, sender: str | None = None) -> dict[str, Any]:
     """Build provider-shaped, minimum-necessary payloads without clinical detail."""
     channel = channel.upper()
@@ -67,7 +80,9 @@ def provider_headers(channel: str, api_key: str) -> dict[str, str]:
     return {"authorization": f"Bearer {api_key}"}
 
 
-def provider_registry() -> dict[str, ConfiguredProvider]:
+def provider_registry() -> dict[str, ConfiguredProvider | HackathonSandboxProvider]:
+    if os.getenv("APP_ENV", "").strip().lower() == "hackathon" and os.getenv("ENABLE_HACKATHON_PROVIDERS", "false").lower() == "true":
+        return {channel: HackathonSandboxProvider(channel) for channel in ("EMAIL", "SMS", "PUSH", "WHATSAPP", "STORAGE")}
     return {
         channel: ConfiguredProvider(
             channel=channel,
