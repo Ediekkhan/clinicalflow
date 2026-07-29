@@ -12,7 +12,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: APP_ENVIRONMENT
-        value: pitch
+        value: staging
       - key: CHANNEL_WEBHOOK_SECRET
         sync: false
       - key: WHATSAPP_VERIFY_TOKEN
