@@ -89,16 +89,7 @@ export function TriageChat() {
       setResult(data);
     } catch (caught) {
       console.error(caught);
-      try {
-        const preview = (await api.post('/api/v1/public/triage-preview', payload)) as TriageResponse;
-        setResult({
-          ...preview,
-          messages: ['I analyzed your symptoms using the public triage service.', ...(preview.messages ?? [])],
-        });
-      } catch (fallbackError) {
-        console.error(fallbackError);
-        setError(fallbackError instanceof Error ? fallbackError.message : 'Unable to complete triage right now.');
-      }
+      setError(caught instanceof Error ? caught.message : 'Unable to complete authenticated triage. Please try again.');
     } finally {
       setIsLoading(false);
     }
