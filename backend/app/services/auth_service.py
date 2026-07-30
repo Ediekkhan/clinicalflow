@@ -55,7 +55,7 @@ def token_tenant_id(token: str) -> UUID | None:
 async def apply_tenant_context(db: AsyncSession, tenant_id: UUID) -> None:
     db.info["tenant_id"] = str(tenant_id)
     if db.bind and db.bind.dialect.name == "postgresql":
-        await db.execute(text("SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": str(tenant_id)})
+        await db.execute(text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"), {"tenant_id": str(tenant_id)})
 
 
 @dataclass(frozen=True)
