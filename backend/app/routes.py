@@ -1325,6 +1325,9 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
     for consent_type, accepted in (("TERMS", payload.accept_terms), ("PRIVACY", payload.accept_privacy), ("MARKETING", payload.marketing_consent)):
         session.add(ConsentRecord(signup_application_id=application.id, consent_type=consent_type, policy_version=payload.consent_version, accepted=accepted, ip_address=request.client.host if request.client else None))
     session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status=None, new_status=application.status))
+    default_tenant_id = uuid.UUID(settings.default_tenant_id)
+    if role == "patient" and not await session.get(Tenant, default_tenant_id):
+        session.add(Tenant(id=default_tenant_id, name="SynaptiVerse", state_location="Nigeria", accepts_patients=True, status="ACTIVE"))
     if role == "patient" and settings.skip_phone_verification:
         data = json.loads(application.payload_json)
         date_of_birth = datetime.fromisoformat(data["data"]["date_of_birth"]) if data.get("data", {}).get("date_of_birth") else None
