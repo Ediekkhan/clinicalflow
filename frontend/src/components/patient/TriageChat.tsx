@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Calendar, MapPin } from 'lucide-react';
 import { Badge } from '@/components/shared/Badge';
@@ -44,9 +44,17 @@ export function TriageChat() {
   const [userMessage, setUserMessage] = useState('');
   const [result, setResult] = useState<TriageResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingAnalysis, setPendingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { coords, error: locationError, isLoading: isLocationLoading, requestLocation } = useGeolocation();
   const responseComplete = Boolean(result && !isLoading);
+
+  useEffect(() => {
+    if (pendingAnalysis && coords && !isLoading) {
+      setPendingAnalysis(false);
+      void submitSymptoms();
+    }
+  }, [coords, pendingAnalysis, isLoading]);
 
   async function submitSymptoms() {
     const symptomText = text.trim();
@@ -84,6 +92,7 @@ export function TriageChat() {
 
   function handleAnalyzeClick() {
     if (!coords) {
+      setPendingAnalysis(true);
       requestLocation();
       return;
     }
