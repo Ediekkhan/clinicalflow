@@ -383,7 +383,7 @@ async def require_account(request: Request, session: AsyncSession) -> AuthAccoun
     session.info["tenant_id"] = str(account.tenant_id)
     session.info["selected_membership_id"] = str(auth_session.selected_membership_id) if auth_session.selected_membership_id else None
     if session.bind and session.bind.dialect.name == "postgresql":
-        await session.execute(text("SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": str(account.tenant_id)})
+        await session.execute(text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"), {"tenant_id": str(account.tenant_id)})
     return account
 
 async def require_roles(request: Request, session: AsyncSession, allowed: set[str]) -> AuthAccount:
