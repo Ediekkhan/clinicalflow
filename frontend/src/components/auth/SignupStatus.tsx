@@ -39,6 +39,7 @@ export function SignupStatus() {
   const [error, setError] = useState('');
   const [code, setCode] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -65,6 +66,19 @@ export function SignupStatus() {
     finally { setVerifying(false); }
   }
 
+  async function resendPhone() {
+    if (!application) return;
+    setResending(true);
+    setError('');
+    try {
+      await api.post('/api/v1/signup/resend-phone', { application_id: application.id, code: '0000' });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to resend the verification code.');
+    } finally {
+      setResending(false);
+    }
+  }
+
   const copy = statusCopy[application?.status ?? 'PENDING_VERIFICATION'] ?? statusCopy.PENDING_VERIFICATION;
   const active = application?.status === 'ACTIVE';
   return (
@@ -75,7 +89,7 @@ export function SignupStatus() {
           <p className="mt-6 text-xs font-bold uppercase tracking-wider text-[#60706a]">Application reference</p>
           <p className="mt-1 break-all font-mono text-lg font-bold text-[#10231e]">{application?.reference || 'Not available'}</p>
           <p className="mt-5 text-sm font-bold text-[#10231e]">Status: <span className="text-[#0b5d4b]">{application?.status?.replaceAll('_', ' ')}</span></p>
-          {application?.status === 'PHONE_VERIFICATION_REQUIRED' ? <div className="mt-6 grid gap-3"><label className="grid gap-2 text-sm font-bold text-[#10231e]">Verification code<input value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" className="min-h-12 rounded-xl border border-[#dbe2dc] bg-white px-4 outline-none focus:border-[#0b5d4b]" /></label><button type="button" onClick={() => void verifyPhone()} disabled={verifying || code.trim().length < 4} className="sv-button-dark w-full">{verifying ? 'Verifying...' : 'Verify and activate account'}</button></div> : null}
+          {application?.status === 'PHONE_VERIFICATION_REQUIRED' ? <div className="mt-6 grid gap-3"><label className="grid gap-2 text-sm font-bold text-[#10231e]">Verification code<input value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" autoComplete="one-time-code" className="min-h-12 rounded-xl border border-[#dbe2dc] bg-white px-4 outline-none focus:border-[#0b5d4b]" /></label><button type="button" onClick={() => void verifyPhone()} disabled={verifying || code.trim().length < 4} className="sv-button-dark w-full">{verifying ? 'Verifying...' : 'Verify and activate account'}</button><button type="button" onClick={() => void resendPhone()} disabled={resending} className="text-sm font-bold text-[#0b5d4b] disabled:opacity-50">{resending ? 'Sending...' : 'Resend verification code'}</button></div> : null}
           {error ? <p role="alert" className="mt-5 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p> : null}
           <div className="mt-7 grid gap-3 sm:grid-cols-2"><Link href="/signup" className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#dbe2dc] bg-white px-4 text-sm font-bold text-[#10231e]">Workspace selection</Link><Link href={active && application?.dashboard_path ? application.dashboard_path : application?.login_path ?? '/login'} className="sv-button-dark">{active ? 'Open workspace' : 'Go to sign in'}</Link></div>
         </>}

@@ -1562,6 +1562,20 @@ async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSess
 async def verify_signup_phone(payload: SignupVerificationRequest, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
     return await _verify_patient(payload, session, "PHONE_OTP", response)
 
+@router.post("/signup/resend-phone", status_code=202)
+async def resend_signup_phone(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    application = await session.get(SignupApplication, payload.application_id)
+    if not application or application.application_type != "patient" or application.status != "PHONE_VERIFICATION_REQUIRED":
+        raise HTTPException(status_code=404, detail="Phone verification application not found")
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    pending = (await session.execute(select(VerificationEvent).where(VerificationEvent.signup_application_id == application.id, VerificationEvent.event_type == "PHONE_OTP", VerificationEvent.status == "PENDING"))).scalars().all()
+    for event in pending:
+        event.status = "REPLACED"
+    session.add(VerificationEvent(signup_application_id=application.id, event_type="PHONE_OTP", status="PENDING", token_hash=token_hash(code), expires_at=utc_now() + timedelta(minutes=10)))
+    session.add(OutboxEvent(tenant_id=uuid.UUID(settings.default_tenant_id), aggregate_type="SignupApplication", aggregate_id=application.id, event_type="patient.phone_verification_requested", recipient_user_id=None, payload_json=json.dumps({"channel": "SMS", "recipient": application.phone, "message": f"Your ClinicalFlow verification code is {code}. It expires in 10 minutes.", "subject": "ClinicalFlow phone verification"}), classification="RESTRICTED", status="PENDING"))
+    await session.commit()
+    return {"status": "queued"}
+
 @router.post("/signup/verify-email", response_model=SignupApplicationResponse)
 async def verify_signup_email(payload: SignupVerificationRequest, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
     return await _verify_patient(payload, session, "EMAIL_OTP", response)
