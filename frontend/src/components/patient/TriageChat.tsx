@@ -6,6 +6,7 @@ import { ArrowRight, Calendar, MapPin } from 'lucide-react';
 import { Badge } from '@/components/shared/Badge';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { api } from '@/lib/auth';
+import { bookAppointment } from '@/lib/api';
 
 type IllnessSeverity = 'MILD' | 'MODERATE' | 'SEVERE';
 
@@ -21,8 +22,9 @@ type TriageResponse = {
   required_department?: string;
   nearest_clinic?: { clinic_name?: string; address?: string; distance_km?: number | null; specialist_name?: string | null; match_basis?: string; required_specialty?: string; emergency_capable?: boolean };
   alternative_facilities?: { tenant_id?: string; clinic_name?: string; address?: string; distance_km?: number | null; match_basis?: string }[];
-  appointment_slot?: { slot_start?: string; specialist_name?: string; specialty?: string; room_label?: string };
+  appointment_slot?: { slot_id?: string; slot_start?: string; specialist_name?: string; specialty?: string; room_label?: string };
   ticket?: { id?: string; ticket_number?: string };
+  appointment?: { id?: string; provider_name?: string; specialty?: string; room_label?: string; starts_at?: string };
 };
 
 function severityTone(severity?: IllnessSeverity) {
@@ -72,6 +74,18 @@ export function TriageChat() {
     const payload = { symptom_description: symptomText, latitude: coords.latitude, longitude: coords.longitude };
     try {
       const data = (await api.post('/api/v1/patient/triage', payload)) as TriageResponse;
+      if (data.ticket?.id && data.appointment_slot?.slot_id) {
+        try {
+          const profile = await api.get('/api/v1/auth/patient/me') as { phone?: string };
+          if (!profile.phone) throw new Error('Your patient phone number is missing from your profile.');
+          const appointment = await bookAppointment(data.ticket.id, data.appointment_slot.slot_id, profile.phone);
+          data.appointment = appointment;
+          data.messages = [...(data.messages ?? []), 'Your appointment has been confirmed with the assigned care team.'];
+        } catch (bookingError) {
+          console.error(bookingError);
+          data.messages = [...(data.messages ?? []), 'Your ticket was routed successfully. Appointment confirmation is pending hospital availability.'];
+        }
+      }
       setResult(data);
     } catch (caught) {
       console.error(caught);
@@ -194,8 +208,8 @@ export function TriageChat() {
                 <div className="flex gap-3">
                   <Calendar className="h-5 w-5 text-[#0b5d4b]" />
                   <div className="w-full">
-                    <p className="font-semibold text-slate-900">Suggested available appointment</p>
-                    <p className="text-sm text-slate-500">{[formatSlot(result.appointment_slot.slot_start), result.appointment_slot.specialist_name, result.appointment_slot.specialty, result.appointment_slot.room_label].filter(Boolean).join(' - ')}</p>
+                    <p className="font-semibold text-slate-900">{result.appointment ? 'Appointment confirmed' : 'Suggested available appointment'}</p>
+                    <p className="text-sm text-slate-500">{[formatSlot(result.appointment?.starts_at ?? result.appointment_slot.slot_start), result.appointment?.provider_name ?? result.appointment_slot.specialist_name, result.appointment?.specialty ?? result.appointment_slot.specialty, result.appointment?.room_label ?? result.appointment_slot.room_label].filter(Boolean).join(' - ')}</p>
                     {responseComplete ? (
                       <button
                         onClick={() => router.push('/dashboard/queue')}

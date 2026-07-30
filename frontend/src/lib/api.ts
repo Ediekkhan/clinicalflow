@@ -192,3 +192,27 @@ export async function listHospitalDepartments(): Promise<{ identity?: Record<str
 export async function rescheduleAppointment(appointmentId: string, slotId: string): Promise<Appointment> {
   return requestJson(`/api/v1/appointments/${appointmentId}/reschedule`, { method: 'PATCH', body: JSON.stringify({ slot_id: slotId }) });
 }
+
+export async function decideHospitalTicket(ticketId: string, decision: 'ACCEPT' | 'REJECT' | 'REDIRECT', reason?: string, redirectFacilityId?: string) {
+  return requestJson(`/api/v1/hospital/tickets/${ticketId}/facility-decision`, { method: 'POST', body: JSON.stringify({ decision, reason, redirect_facility_id: redirectFacilityId }) });
+}
+
+export async function transitionHospitalTicket(ticketId: string, status: string, reason?: string) {
+  return requestJson(`/api/v1/hospital/tickets/${ticketId}/transition`, { method: 'POST', body: JSON.stringify({ status, reason }) });
+}
+
+export async function listAssignmentRequests() {
+  return requestJson<Array<Record<string, unknown>>>('/api/v1/appointments/assignment-requests');
+}
+
+export async function acceptAppointment(appointmentId: string) {
+  return requestJson<Appointment>(`/api/v1/appointments/${appointmentId}/accept`, { method: 'POST', body: JSON.stringify({}) });
+}
+
+export async function startAppointmentEncounter(appointmentId: string) {
+  return requestJson<Record<string, unknown>>(`/api/v1/appointments/${appointmentId}/encounter`, { method: 'POST', body: JSON.stringify({}) });
+}
+
+export async function addEncounterNote(encounterId: string, body: string, noteType = 'PROGRESS') {
+  return requestJson<Record<string, unknown>>(`/api/v1/encounters/${encounterId}/notes`, { method: 'POST', body: JSON.stringify({ body, note_type: noteType }) });
+}

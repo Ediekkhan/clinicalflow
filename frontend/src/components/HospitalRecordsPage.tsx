@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarDays, RefreshCcw, Search, Stethoscope, Users } from 'lucide-react';
-import { listHospitalDepartments, listHospitalPatients, listHospitalSpecialists } from '@/lib/api';
+import { decideHospitalTicket, listHospitalDepartments, listHospitalPatients, listHospitalSpecialists, transitionHospitalTicket } from '@/lib/api';
 import type { HospitalDepartment, HospitalPatient, HospitalSpecialist } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -109,6 +109,9 @@ export function HospitalRecordsPage({ mode, title, subtitle }: { mode: Mode; tit
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState(filterOptions[mode][0]);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [actionReason, setActionReason] = useState('');
+  const [actionError, setActionError] = useState('');
   const Icon = iconForMode(mode);
 
   async function load() {
@@ -134,6 +137,22 @@ export function HospitalRecordsPage({ mode, title, subtitle }: { mode: Mode; tit
     const needle = query.trim().toLowerCase();
     return rows.filter((row) => matchesFilter(mode, row, filter)).filter((row) => !needle || rowText(row).includes(needle));
   }, [filter, mode, query, rows]);
+
+  async function runTicketAction(ticketId: string, action: 'ACCEPT' | 'REJECT' | 'CHECKED_IN' | 'BEING_SEEN' | 'RESOLVED') {
+    setActionError('');
+    if (action === 'REJECT' && actionReason.trim().length < 10) {
+      setActionError('Add a clear reason of at least 10 characters before rejecting.');
+      return;
+    }
+    try {
+      if (action === 'ACCEPT' || action === 'REJECT') await decideHospitalTicket(ticketId, action, actionReason);
+      else await transitionHospitalTicket(ticketId, action, actionReason);
+      setActionId(null); setActionReason('');
+      await load();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Unable to update this ticket.');
+    }
+  }
 
   return (
     <main className="mx-auto grid max-w-7xl gap-4 p-4 md:p-6">
@@ -185,6 +204,14 @@ export function HospitalRecordsPage({ mode, title, subtitle }: { mode: Mode; tit
                 <span className="text-sm text-slate-700">{item.department ?? item.required_specialty ?? 'Unassigned'}</span>
                 <span className="text-sm text-slate-700">{item.assigned_doctor}</span>
                 <div className="flex flex-wrap gap-2"><Badge value={item.assignment_status} /><Badge value={item.queue_status} /></div>
+                <div className="flex flex-wrap gap-2 lg:col-span-6">
+                  {['AWAITING_FACILITY_ACCEPTANCE', 'ROUTED', 'QUEUED'].includes(item.queue_status ?? '') ? <button type="button" onClick={() => void runTicketAction(item.id, 'ACCEPT')} className="min-h-10 rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Accept patient</button> : null}
+                  {['AWAITING_FACILITY_ACCEPTANCE', 'ROUTED', 'QUEUED'].includes(item.queue_status ?? '') ? <button type="button" onClick={() => { setActionId(item.id); setActionError(''); }} className="min-h-10 rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">Reject patient</button> : null}
+                  {item.queue_status === 'QUEUED' ? <button type="button" onClick={() => void runTicketAction(item.id, 'BEING_SEEN')} className="min-h-10 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">Start visit</button> : null}
+                  {item.queue_status === 'BEING_SEEN' ? <button type="button" onClick={() => void runTicketAction(item.id, 'RESOLVED')} className="min-h-10 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">Resolve visit</button> : null}
+                </div>
+                {actionId === item.id ? <div className="flex flex-wrap gap-2 lg:col-span-6"><input value={actionReason} onChange={(event) => setActionReason(event.target.value)} placeholder="Reason for rejection or redirect" className="min-h-10 min-w-64 flex-1 rounded-lg border border-slate-200 px-3 text-sm" /><button type="button" onClick={() => void runTicketAction(item.id, 'REJECT')} className="min-h-10 rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white">Confirm rejection</button><button type="button" onClick={() => { setActionId(null); setActionReason(''); }} className="min-h-10 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold">Cancel</button></div> : null}
+                {actionError && actionId === item.id ? <p className="text-xs font-semibold text-rose-700 lg:col-span-6">{actionError}</p> : null}
               </article>
             ))}
           </div>
