@@ -107,15 +107,19 @@ export function HealthCard() {
     let cancelled = false;
     async function loadUser() {
       try {
-        const [data, credential] = await Promise.all([
+        const [profileResult, credentialResult] = await Promise.allSettled([
           api.get('/api/v1/auth/patient/me') as Promise<CurrentUser>,
           api.get('/api/v1/patient/health-card') as Promise<SecureCardCredential>,
         ]);
         if (cancelled) return;
-        setCurrentUser(data);
-        setCardDetails(emptyDetails(data));
-        setSecureCredential(credential);
-        setQrDataUrl(await QRCode.toDataURL(credential.qr_payload, { width: 240, margin: 1, errorCorrectionLevel: 'H' }));
+        if (profileResult.status === 'fulfilled') {
+          setCurrentUser(profileResult.value);
+          setCardDetails(emptyDetails(profileResult.value));
+        }
+        if (credentialResult.status === 'fulfilled') {
+          setSecureCredential(credentialResult.value);
+          setQrDataUrl(await QRCode.toDataURL(credentialResult.value.qr_payload, { width: 240, margin: 1, errorCorrectionLevel: 'H' }));
+        }
       } catch (error) {
         console.error(error);
         if (!cancelled) setCurrentUser(null);
