@@ -100,6 +100,7 @@ export function HealthCard() {
   const [editValue, setEditValue] = useState('');
   const [confirmField, setConfirmField] = useState<CardField | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [secureCredential, setSecureCredential] = useState<SecureCardCredential | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState('');
 
@@ -192,6 +193,7 @@ export function HealthCard() {
 
   async function saveField(field: CardField) {
     setIsSaving(true);
+    setSaveError('');
     try {
       const updated = (await api.patch('/api/v1/patient/card-details', { [field]: editValue })) as CurrentUser;
       setCurrentUser((current) => ({ ...current, ...updated }));
@@ -200,6 +202,7 @@ export function HealthCard() {
       setConfirmField(null);
     } catch (error) {
       console.error(error);
+      setSaveError(error instanceof Error ? error.message : 'Unable to save this card detail.');
     } finally {
       setIsSaving(false);
     }
@@ -332,6 +335,7 @@ export function HealthCard() {
 
       <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
         <h3 className="font-semibold text-slate-900">Card Details</h3>
+        {saveError ? <p role="alert" className="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</p> : null}
         <div className="mt-4 divide-y divide-slate-100">
           {detailFields.map(({ field, label, empty, inputType }) => {
             const locked = isLocked(field);
