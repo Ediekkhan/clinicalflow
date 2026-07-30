@@ -82,6 +82,14 @@ export function TriageChat() {
     }
   }
 
+  function handleAnalyzeClick() {
+    if (!coords) {
+      requestLocation();
+      return;
+    }
+    void submitSymptoms();
+  }
+
   return (
     <section className="flex min-h-[640px] flex-col overflow-hidden rounded-[2rem] border border-[#dbe2dc] bg-white shadow-[0_24px_70px_rgba(7,61,51,.08)]">
       <header className="flex items-center justify-between border-b border-[#dbe2dc] px-5 py-4 sm:px-7">
@@ -215,11 +223,11 @@ export function TriageChat() {
         <div className="mt-3 flex justify-end gap-2">
           <button
             type="button"
-            disabled={!text.trim() || !coords || isLoading}
-            onClick={() => void submitSymptoms()}
+            disabled={!text.trim() || isLoading || isLocationLoading}
+            onClick={handleAnalyzeClick}
             className="sv-button-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Analyze symptoms
+            {isLocationLoading ? 'Getting location...' : coords ? 'Analyze symptoms' : 'Use location to analyze'}
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>
