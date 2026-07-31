@@ -8,6 +8,7 @@ neo4j>=6.0,<7
 redis>=6.4,<7
 pydantic>=2.13,<3
 pydantic-settings>=2.10,<3
+PyJWT>=2.9,<3
 
 # Test dependencies
 pytest>=9.1,<10

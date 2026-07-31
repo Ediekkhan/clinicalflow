@@ -20,6 +20,7 @@ from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for
 from app.services.channel_service import SMS_TEMPLATES, intent_from_text, normalize_webhook, valid_signature
 from app.services.facility_routing import rank_eligible_facilities, select_nearest_eligible_hospital, valid_coordinates
 from app.services.registry_service import ensure_facility_registry, ensure_patient_registry, ensure_provider_registry, issue_health_card_credential, patient_duplicate_key
+from app.services.supabase_auth import password_login, provision_user, SupabaseAuthError
 
 router = APIRouter(prefix="/api/v1")
 
@@ -375,13 +376,14 @@ async def get_db(request: Request) -> AsyncSession:
             await session.close()
 
 async def require_account(request: Request, session: AsyncSession) -> AuthAccount:
-    token = request.cookies.get(ACCESS_COOKIE)
+    authorization = request.headers.get("authorization", "")
+    token = request.cookies.get(ACCESS_COOKIE) or (authorization[7:].strip() if authorization.lower().startswith("bearer ") else None)
     authenticated = await account_for_access_token(session, token) if token else None
     if not authenticated:
         raise HTTPException(status_code=401, detail="Authentication required")
     account, auth_session = authenticated
     session.info["tenant_id"] = str(account.tenant_id)
-    session.info["selected_membership_id"] = str(auth_session.selected_membership_id) if auth_session.selected_membership_id else None
+    session.info["selected_membership_id"] = str(auth_session.selected_membership_id) if auth_session and auth_session.selected_membership_id else None
     if session.bind and session.bind.dialect.name == "postgresql":
         await session.execute(text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"), {"tenant_id": str(account.tenant_id)})
     return account
@@ -430,6 +432,21 @@ async def login(role: str, payload: AuthLoginRequest, request: Request, response
         account = await find_account(session, role, identifier, uuid.UUID(settings.default_tenant_id))
     else:
         account = await session.scalar(select(AuthAccount).where(AuthAccount.role == role, func.lower(AuthAccount.identifier) == identifier, AuthAccount.is_active.is_(True)))
+    # Supabase Auth is the password authority when configured. The linked
+    # application account still supplies role, membership, and tenant scope.
+    if settings.supabase_auth_enabled:
+        supabase_id = await password_login(identifier, payload.password)
+        if supabase_id:
+            account = await session.scalar(select(AuthAccount).where(AuthAccount.supabase_user_id == supabase_id, AuthAccount.role == role, AuthAccount.is_active.is_(True)))
+            # One-time safe migration: match the existing application account
+            # by its normalized identifier, then persist the Auth user id.
+            if not account:
+                account = await session.scalar(select(AuthAccount).where(AuthAccount.role == role, func.lower(AuthAccount.identifier) == identifier, AuthAccount.is_active.is_(True)))
+                if account and not account.supabase_user_id:
+                    account.supabase_user_id = supabase_id
+            if account:
+                return await _login_account(account, request, response, session)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     now = utc_now()
     if account and account.locked_until and account.locked_until.replace(tzinfo=UTC) > now:
         raise HTTPException(status_code=423, detail="Account is temporarily locked. Try again later.")
@@ -469,7 +486,8 @@ async def hospital_login(payload: HospitalLoginRequest, request: Request, respon
 @router.get("/auth/{role}/me", response_model=AuthProfileResponse)
 async def get_current_profile(role: str, request: Request) -> AuthProfileResponse:
     async with request.app.state.session_factory() as session:
-        token = request.cookies.get(ACCESS_COOKIE)
+        authorization = request.headers.get("authorization", "")
+        token = request.cookies.get(ACCESS_COOKIE) or (authorization[7:].strip() if authorization.lower().startswith("bearer ") else None)
         authenticated = await account_for_access_token(session, token) if token else None
         if not authenticated:
             raise HTTPException(status_code=401, detail="Authentication required")
@@ -525,9 +543,9 @@ async def staff_workspaces(request: Request, session: AsyncSession = Depends(get
     account = await require_account(request, session)
     if account.role not in {"doctor", "specialist", "nurse", "department_coordinator", "hospital_admin", "admin"}:
         raise HTTPException(status_code=403, detail="Staff workspace access required")
-    token = request.cookies.get(ACCESS_COOKIE)
+    token = request.cookies.get(ACCESS_COOKIE) or request.headers.get("authorization", "")[7:].strip()
     authenticated = await account_for_access_token(session, token) if token else None
-    selected_id = authenticated[1].selected_membership_id if authenticated else None
+    selected_id = authenticated[1].selected_membership_id if authenticated and authenticated[1] else None
     memberships = list((await session.execute(
         select(StaffMembership).where(StaffMembership.user_id == account.id).order_by(StaffMembership.created_at.asc())
     )).scalars().all())
@@ -567,7 +585,8 @@ async def staff_workspaces(request: Request, session: AsyncSession = Depends(get
 
 @router.post("/staff/workspaces/{membership_id}/select")
 async def select_staff_workspace(membership_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    token = request.cookies.get(ACCESS_COOKIE)
+    authorization = request.headers.get("authorization", "")
+    token = request.cookies.get(ACCESS_COOKIE) or (authorization[7:].strip() if authorization.lower().startswith("bearer ") else None)
     authenticated = await account_for_access_token(session, token) if token else None
     if not authenticated:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -1337,6 +1356,11 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
         account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
         session.add(account)
         await session.flush()
+        if settings.supabase_auth_enabled:
+            try:
+                account.supabase_user_id = await provision_user(email=account.email, phone=account.phone, password=payload.password, metadata={"role": account.role, "application_id": str(application.id)})
+            except SupabaseAuthError as exc:
+                raise HTTPException(status_code=502, detail="Supabase Auth could not create the account") from exc
         await ensure_patient_registry(session, account)
         application.account_id, application.status = account.id, "ACTIVE"
         session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status="PHONE_VERIFICATION_REQUIRED", new_status="ACTIVE"))
@@ -1374,6 +1398,11 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
         account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role=membership_role, identifier=payload.email, password_hash=hash_password(payload.password), first_name=name_parts[0], last_name=name_parts[1] if len(name_parts) > 1 else "", phone=payload.phone, email=payload.email, specialty=payload.data.get("primary_specialty") if role == "specialist" else None, is_active=False)
         session.add(account)
         await session.flush()
+        if settings.supabase_auth_enabled:
+            try:
+                account.supabase_user_id = await provision_user(email=account.email, phone=account.phone, password=payload.password, metadata={"role": account.role, "application_id": str(application.id)})
+            except SupabaseAuthError as exc:
+                raise HTTPException(status_code=502, detail="Supabase Auth could not create the account") from exc
         provider_registry = await ensure_provider_registry(session, account)
         provider_registry.licence_jurisdiction = payload.data.get("licence_jurisdiction")
         provider_registry.licence_number = payload.data.get("licence_number")
@@ -1824,7 +1853,9 @@ async def appointment_response(session: AsyncSession, appointment: Appointment) 
     )
 @router.post("/appointments", response_model=AppointmentResponse, status_code=201)
 async def book_appointment(payload: AppointmentCreate, request: Request, session: AsyncSession = Depends(get_db)) -> AppointmentResponse:
-    authenticated = await account_for_access_token(session, request.cookies.get(ACCESS_COOKIE)) if request.cookies.get(ACCESS_COOKIE) else None
+    authorization = request.headers.get("authorization", "")
+    access_token = request.cookies.get(ACCESS_COOKIE) or (authorization[7:].strip() if authorization.lower().startswith("bearer ") else None)
+    authenticated = await account_for_access_token(session, access_token) if access_token else None
     requester = authenticated[0] if authenticated else None
     owner_tenant_id = requester.tenant_id if requester and requester.role == "patient" else uuid.UUID(public_tenant_id())
     await apply_tenant_context(session, owner_tenant_id)

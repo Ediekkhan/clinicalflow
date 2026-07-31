@@ -47,6 +47,9 @@ class AuthAccount(Base):
     role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     identifier: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    # Nullable for a safe migration: existing application accounts continue
+    # to work until they are linked to a Supabase Auth user.
+    supabase_user_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True, unique=True, index=True)
     first_name: Mapped[str] = mapped_column(String(128), nullable=False)
     last_name: Mapped[str] = mapped_column(String(128), nullable=False)
     phone: Mapped[str | None] = mapped_column(String(32), nullable=True)

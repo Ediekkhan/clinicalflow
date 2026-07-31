@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     default_tenant_id: str = "11111111-1111-1111-1111-111111111111"
     auto_create_schema: bool = True
     cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
+    # Optional Supabase Auth compatibility layer. Profile and tenant records
+    # remain in the application schema; these values only enable identity sync.
+    supabase_url: str | None = None
+    supabase_anon_key: str | None = None
+    supabase_service_role_key: str | None = None
+    supabase_jwt_secret: str | None = None
+
+    @property
+    def supabase_auth_enabled(self) -> bool:
+        return bool(self.supabase_url and self.supabase_anon_key)
 
     @property
     def environment(self) -> str:

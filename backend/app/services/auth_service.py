@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import AuthAccount, AuthSession, StaffMembership, Tenant
+from app.services.supabase_auth import account_for_supabase_token
 
 ACCESS_COOKIE = "synaptiverse_access"
 REFRESH_COOKIE = "synaptiverse_refresh"
@@ -99,6 +100,9 @@ async def find_account(db: AsyncSession, role: str, identifier: str, tenant_id: 
 
 
 async def account_for_access_token(db: AsyncSession, token: str) -> tuple[AuthAccount, AuthSession] | None:
+    supabase_account = await account_for_supabase_token(db, token)
+    if supabase_account:
+        return supabase_account, None  # type: ignore[return-value]
     tenant_id = token_tenant_id(token)
     if not tenant_id:
         return None
