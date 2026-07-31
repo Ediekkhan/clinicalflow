@@ -75,4 +75,37 @@ export const signupConfigs: Record<SignupRole, SignupConfig> = {
   ] },
 };
 
+// Keep regulatory fields in the onboarding model, but do not make people
+// complete the entire verification packet before an application can start.
+// The backend still enforces the minimum identity, credential and membership
+// fields required for each role.
+const verificationLaterFields = new Set([
+  'middle_name', 'preferred_language', 'time_zone', 'display_name', 'hospital_type',
+  'ownership_type', 'website', 'operating_hours', 'ambulance_available',
+  'emergency_receiving', 'accepts_referrals', 'departments', 'specialties',
+  'bed_capacity', 'emergency_capacity', 'services', 'outpatient_services',
+  'daily_capacity', 'referral_hospitals', 'hmo_plans', 'trading_name',
+  'pharmacy_type', 'laboratory_type', 'collection_sites', 'tests_offered',
+  'equipment_categories', 'turnaround_times', 'result_delivery',
+  'inventory_integration', 'administrator_title', 'administrator_phone',
+  'verification_documents', 'subspecialties', 'licence_issue_date',
+  'licence_expiration', 'years_experience', 'qualifications',
+  'training_institution', 'work_start_date', 'working_schedule',
+  'clinical_skills', 'shift_type', 'hmo_member_number', 'medical_conditions',
+  'address', 'regions_served', 'member_service_phone', 'claims_email',
+  'authorization_contact', 'plans_offered', 'claims_method', 'authorization_workflow',
+  'integration_requirements', 'authorization_document_key', 'responsibilities',
+  'geographic_scope', 'reporting_permissions',
+  'supervising_official', 'official_address', 'agency', 'jurisdiction',
+]);
+
+for (const config of Object.values(signupConfigs)) {
+  if (config.role === 'patient') continue;
+  for (const step of config.steps) {
+    step.fields = step.fields.map((field) => verificationLaterFields.has(field.name)
+      ? { ...field, required: false, optional: true }
+      : field);
+  }
+}
+
 export const signupRoles = Object.values(signupConfigs);
