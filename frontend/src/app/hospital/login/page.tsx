@@ -14,18 +14,18 @@ const roles = [
 
 export default function HospitalLoginPage() {
   const [role, setRole] = useState<(typeof roles)[number]['value']>('doctor');
-  const [hospitalCode, setHospitalCode] = useState('UYO-FAMILY');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [serverError, setServerError] = useState('');
   const [loading, setLoading] = useState(false);
   const errors = useMemo(
     () => ({
-      hospitalCode: hospitalCode.trim().length < 3 ? 'Enter the hospital account code.' : '',
+      email: !/^\S+@\S+\.\S+$/.test(email.trim()) ? 'Enter the work email used for this account.' : '',
       password: password.length >= 4 ? '' : 'Enter the hospital account password.',
     }),
-    [hospitalCode, password],
+    [email, password],
   );
-  const valid = !errors.hospitalCode && !errors.password;
+  const valid = !errors.email && !errors.password;
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,7 +33,7 @@ export default function HospitalLoginPage() {
     setLoading(true);
     setServerError('');
     try {
-      const session = await api.post('/api/v1/auth/hospital/account-login', { hospital_code: hospitalCode, role, password });
+      const session = await api.post(`/api/v1/auth/${role}/login`, { email: email.trim().toLowerCase(), password });
       if (typeof document !== 'undefined') {
         const secure = window.location.protocol === 'https:' ? '; Secure' : '';
         const sessionRole = typeof session === 'object' && session && 'role' in session ? String(session.role) : role;
@@ -72,13 +72,15 @@ export default function HospitalLoginPage() {
           ))}
         </div>
         <label className="grid gap-2 text-sm font-bold text-[#10231e]">
-          Hospital code
+          Work email
           <input
-            value={hospitalCode}
-            onChange={(event) => setHospitalCode(event.target.value)}
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
             className="min-h-14 rounded-2xl border border-[#dbe2dc] bg-[#f8f9f5] px-5 outline-none focus:border-[#0b5d4b]"
           />
-          {errors.hospitalCode ? <span className="text-xs text-[#DC2626]">{errors.hospitalCode}</span> : null}
+          {errors.email ? <span className="text-xs text-[#DC2626]">{errors.email}</span> : null}
         </label>
         <label className="grid gap-2 text-sm font-bold text-[#10231e]">
           Hospital password
