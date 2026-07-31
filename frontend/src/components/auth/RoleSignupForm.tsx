@@ -13,6 +13,15 @@ type SignupResponse = { id: string; reference: string; status: string };
 type LookupOption = { id: string; name: string; location?: string };
 type InvitationContext = { hospital_name?: string; department_id: string; intended_role: string; specialty_id?: string; employment_type?: string };
 
+const countryData: Record<string, { code: string; states: string[] }> = {
+  Nigeria: { code: '+234', states: ['Abia', 'Adamawa', 'Akwa Ibom', 'Anambra', 'Bauchi', 'Bayelsa', 'Benue', 'Borno', 'Cross River', 'Delta', 'Ebonyi', 'Edo', 'Ekiti', 'Enugu', 'Gombe', 'Imo', 'Jigawa', 'Kaduna', 'Kano', 'Katsina', 'Kebbi', 'Kogi', 'Kwara', 'Lagos', 'Nasarawa', 'Niger', 'Ogun', 'Ondo', 'Osun', 'Oyo', 'Plateau', 'Rivers', 'Sokoto', 'Taraba', 'Yobe', 'Zamfara', 'Federal Capital Territory'] },
+  Ghana: { code: '+233', states: ['Ashanti', 'Bono', 'Central', 'Eastern', 'Greater Accra', 'Northern', 'Upper East', 'Upper West', 'Volta', 'Western'] },
+  Kenya: { code: '+254', states: ['Nairobi', 'Mombasa', 'Kisumu', 'Nakuru', 'Kiambu', 'Machakos', 'Uasin Gishu', 'Kakamega'] },
+  'South Africa': { code: '+27', states: ['Eastern Cape', 'Free State', 'Gauteng', 'KwaZulu-Natal', 'Limpopo', 'Mpumalanga', 'Northern Cape', 'North West', 'Western Cape'] },
+  'United Kingdom': { code: '+44', states: ['England', 'Scotland', 'Wales', 'Northern Ireland'] },
+  'United States': { code: '+1', states: ['Alabama', 'California', 'Florida', 'Georgia', 'Illinois', 'New York', 'Texas', 'Washington'] },
+};
+
 const topLevelFields = new Set(['first_name', 'middle_name', 'last_name', 'full_name', 'phone', 'email', 'country', 'region', 'password', 'confirm_password', 'invitation_token']);
 const coordinateFields = new Set(['latitude', 'longitude']);
 
@@ -47,7 +56,7 @@ function validateField(field: SignupField, value: string) {
   return '';
 }
 
-function FieldControl({ field, value, error, onChange, lookupOptions }: { field: SignupField; value: string; error?: string; onChange: (value: string) => void; lookupOptions?: LookupOption[] }) {
+function FieldControl({ field, value, error, onChange, lookupOptions, options }: { field: SignupField; value: string; error?: string; onChange: (value: string) => void; lookupOptions?: LookupOption[]; options?: string[] }) {
   const id = `signup-${field.name}`;
   const describedBy = error ? `${id}-error` : undefined;
   return (
@@ -58,7 +67,7 @@ function FieldControl({ field, value, error, onChange, lookupOptions }: { field:
       ) : field.type === 'select' ? (
         <select id={id} value={value} onChange={(event) => onChange(event.target.value)} aria-invalid={Boolean(error)} aria-describedby={describedBy} className={inputClass(Boolean(error))}>
           <option value="">Select an option</option>
-          {lookupOptions ? lookupOptions.map((option) => <option key={option.id} value={option.id}>{option.name}{option.location ? ` - ${option.location}` : ''}</option>) : field.options?.map((option) => <option key={option} value={option}>{option}</option>)}
+          {lookupOptions ? lookupOptions.map((option) => <option key={option.id} value={option.id}>{option.name}{option.location ? ` - ${option.location}` : ''}</option>) : (options ?? field.options)?.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       ) : (
         <input id={id} type={field.type ?? 'text'} value={value} onChange={(event) => onChange(event.target.value)} min={field.min} max={field.max} aria-invalid={Boolean(error)} aria-describedby={describedBy} className={inputClass(Boolean(error))} placeholder={field.placeholder} autoComplete={autoCompleteFor(field.name) ?? (field.type === 'password' ? 'new-password' : undefined)} />
@@ -129,6 +138,10 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
 
   function update(name: string, value: string) {
     setValues((current) => ({ ...current, [name]: value }));
+    if (name === 'country') {
+      const nextCountry = countryData[value];
+      setValues((current) => ({ ...current, country: value, region: '', phone: current.phone?.trim() ? current.phone : (nextCountry?.code ?? '') }));
+    }
     if (name === 'invitation_token') setInvitationContext(null);
     setErrors((current) => ({ ...current, [name]: '' }));
   }
@@ -218,7 +231,7 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
             <h2 className="text-2xl font-black text-[#10231e]">{config.steps[step].title}</h2>
             <p className="mt-2 text-sm leading-6 text-[#60706a]">{config.steps[step].description}</p>
             <div className="mt-7 grid gap-5 sm:grid-cols-2">
-              {currentFields.filter((field) => !coordinateFields.has(field.name)).map((field) => <FieldControl key={field.name} field={field} value={values[field.name] ?? ''} error={errors[field.name]} onChange={(value) => { update(field.name, value); if (field.name === 'registered_hospital_id') update('department_id', ''); }} lookupOptions={field.name === 'registered_hospital_id' ? hospitals : field.name === 'department_id' ? departments : undefined} />)}
+              {currentFields.filter((field) => !coordinateFields.has(field.name)).map((field) => <FieldControl key={field.name} field={field} value={values[field.name] ?? ''} error={errors[field.name]} onChange={(value) => { update(field.name, value); if (field.name === 'registered_hospital_id') update('department_id', ''); }} options={field.name === 'region' ? (countryData[values.country]?.states ?? ['Select a country first']) : undefined} lookupOptions={field.name === 'registered_hospital_id' ? hospitals : field.name === 'department_id' ? departments : undefined} />)}
             </div>
             {isFacilityLocationStep ? <div className="mt-5 rounded-xl border border-[#dbe2dc] bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
