@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Check, Loader2, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Loader2, MapPin, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/auth';
+import { useGeolocation } from '@/hooks/useGeolocation';
 import type { SignupConfig, SignupField } from '@/lib/signup-config';
 
 type Values = Record<string, string>;
@@ -13,6 +14,7 @@ type LookupOption = { id: string; name: string; location?: string };
 type InvitationContext = { hospital_name?: string; department_id: string; intended_role: string; specialty_id?: string; employment_type?: string };
 
 const topLevelFields = new Set(['first_name', 'middle_name', 'last_name', 'full_name', 'phone', 'email', 'country', 'region', 'password', 'confirm_password', 'invitation_token']);
+const coordinateFields = new Set(['latitude', 'longitude']);
 
 function inputClass(hasError: boolean) {
   return `min-h-12 w-full rounded-xl border bg-white px-4 py-3 text-sm text-[#10231e] outline-none transition ${hasError ? 'border-rose-400 focus:ring-2 focus:ring-rose-100' : 'border-[#dbe2dc] focus:border-[#0b5d4b] focus:ring-2 focus:ring-[#e9f6f1]'}`;
@@ -69,6 +71,7 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
   const [hospitals, setHospitals] = useState<LookupOption[]>([]);
   const [departments, setDepartments] = useState<LookupOption[]>([]);
   const [invitationContext, setInvitationContext] = useState<InvitationContext | null>(null);
+  const { coords, error: locationError, isLoading: locationLoading, requestLocation } = useGeolocation();
   const reviewStep = config.steps.length;
   const isReview = step === reviewStep;
   const totalSteps = config.steps.length + 1;
@@ -80,6 +83,7 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
   const currentFields = isMembershipStep
     ? rawCurrentFields.filter((field) => staffMethod === 'INVITATION' ? !requestFields.has(field.name) && (invitationFields.has(field.name) || !['employment_type', 'employee_number', 'work_start_date'].includes(field.name)) : !invitationFields.has(field.name))
     : rawCurrentFields;
+  const isFacilityLocationStep = ['hospital', 'clinic', 'pharmacy', 'laboratory'].includes(config.role) && config.steps[step]?.title.toLowerCase().includes('location');
   const allFields = useMemo(() => config.steps.flatMap((item) => item.fields), [config.steps]);
 
   useEffect(() => {
@@ -104,6 +108,13 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
       setDepartments(Array.isArray(items) ? items : []);
     }).catch(() => setServerError('Unable to load hospital departments.'));
   }, [staffMethod, values.registered_hospital_id]);
+
+  useEffect(() => {
+    if (!coords || !isFacilityLocationStep) return;
+    update('latitude', String(coords.latitude));
+    update('longitude', String(coords.longitude));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coords, isFacilityLocationStep]);
 
   function update(name: string, value: string) {
     setValues((current) => ({ ...current, [name]: value }));
@@ -191,8 +202,16 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
             <h2 className="text-2xl font-black text-[#10231e]">{config.steps[step].title}</h2>
             <p className="mt-2 text-sm leading-6 text-[#60706a]">{config.steps[step].description}</p>
             <div className="mt-7 grid gap-5 sm:grid-cols-2">
-              {currentFields.map((field) => <FieldControl key={field.name} field={field} value={values[field.name] ?? ''} error={errors[field.name]} onChange={(value) => { update(field.name, value); if (field.name === 'registered_hospital_id') update('department_id', ''); }} lookupOptions={field.name === 'registered_hospital_id' ? hospitals : field.name === 'department_id' ? departments : undefined} />)}
+              {currentFields.filter((field) => !coordinateFields.has(field.name)).map((field) => <FieldControl key={field.name} field={field} value={values[field.name] ?? ''} error={errors[field.name]} onChange={(value) => { update(field.name, value); if (field.name === 'registered_hospital_id') update('department_id', ''); }} lookupOptions={field.name === 'registered_hospital_id' ? hospitals : field.name === 'department_id' ? departments : undefined} />)}
             </div>
+            {isFacilityLocationStep ? <div className="mt-5 rounded-xl border border-[#dbe2dc] bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-[#0b5d4b]" /><div><p className="text-sm font-bold text-[#10231e]">Facility location</p><p className="text-xs text-[#60706a]">Use device location to set routing coordinates automatically.</p></div></div>
+                <button type="button" onClick={() => requestLocation()} disabled={locationLoading} className="inline-flex min-h-11 items-center gap-2 rounded-full border border-[#0b5d4b] px-4 text-sm font-bold text-[#0b5d4b] disabled:opacity-50">{locationLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}{locationLoading ? 'Getting location...' : coords ? 'Refresh location' : 'Use my location'}</button>
+              </div>
+              {coords ? <p className="mt-3 text-xs font-semibold text-emerald-700">Location added. Coordinates will be used for nearest-facility routing.</p> : <p className="mt-3 text-xs text-[#60706a]">Location permission is required so patients can be routed accurately. Latitude and longitude will not be typed manually.</p>}
+              {locationError ? <p role="alert" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{locationError}</p> : null}
+            </div> : null}
             {isMembershipStep && staffMethod === 'JOIN_REQUEST' ? <p className="mt-5 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Your personal account will be created, but hospital access remains disabled until the hospital approves this membership.</p> : null}
             {isMembershipStep && invitationContext ? <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"><p className="font-bold">Invitation verified</p><p className="mt-1">{invitationContext.hospital_name} · {invitationContext.department_id} · {invitationContext.intended_role}{invitationContext.specialty_id ? ` · ${invitationContext.specialty_id}` : ''}</p><p className="mt-1 text-xs">Hospital, department, role and specialty are protected by the invitation.</p></div> : null}
           </>
