@@ -145,6 +145,11 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
   }
 
   async function next() {
+    if (isFacilityLocationStep && (!values.latitude || !values.longitude)) {
+      setServerError('Allow location access so we can capture the facility coordinates, then tap Next again.');
+      requestLocation();
+      return;
+    }
     if (!validateCurrent()) return;
     if (isMembershipStep && staffMethod === 'INVITATION' && !invitationContext) {
       setServerError('');
@@ -243,7 +248,7 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
         {serverError ? <p role="alert" className="mt-5 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{serverError}</p> : null}
         <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
           <button type="button" onClick={() => setStep((current) => Math.max(0, current - 1))} disabled={step === 0 || submitting} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-[#dbe2dc] bg-white px-6 text-sm font-bold text-[#10231e] disabled:opacity-40"><ArrowLeft className="h-4 w-4" />Previous</button>
-          {isReview ? <button type="button" onClick={() => void submit()} disabled={submitting} className="sv-button-dark min-w-48">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{submitting ? 'Submitting...' : 'Submit application'}</button> : <button type="button" onClick={() => void next()} className="sv-button-dark min-w-48">Save and continue <ArrowRight className="h-4 w-4" /></button>}
+          {isReview ? <button type="button" onClick={() => void submit()} disabled={submitting} className="sv-button-dark min-w-48">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{submitting ? 'Submitting...' : 'Submit application'}</button> : <button type="button" onClick={() => void next()} disabled={locationLoading} className="sv-button-dark min-w-48">{isFacilityLocationStep && !values.latitude ? 'Use location and continue' : 'Save and continue'} <ArrowRight className="h-4 w-4" /></button>}
         </div>
       </section>
       <p className="mx-auto mt-5 max-w-2xl text-center text-xs leading-5 text-[#60706a]">Your information is used only for account creation, identity verification and regulatory review. Sensitive signup drafts are kept only in this page session and are not written to browser storage.</p>
