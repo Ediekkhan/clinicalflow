@@ -20,6 +20,17 @@ function inputClass(hasError: boolean) {
   return `min-h-12 w-full rounded-xl border bg-white px-4 py-3 text-sm text-[#10231e] outline-none transition ${hasError ? 'border-rose-400 focus:ring-2 focus:ring-rose-100' : 'border-[#dbe2dc] focus:border-[#0b5d4b] focus:ring-2 focus:ring-[#e9f6f1]'}`;
 }
 
+function autoCompleteFor(fieldName: string) {
+  const values: Record<string, string> = {
+    first_name: 'given-name', last_name: 'family-name', full_name: 'name',
+    email: 'email', phone: 'tel', administrator_phone: 'tel', official_phone: 'tel',
+    administrator_name: 'name', address: 'street-address', head_office_address: 'street-address',
+    country: 'country-name', region: 'address-level1', city: 'address-level2',
+    password: 'new-password', confirm_password: 'new-password',
+  };
+  return values[fieldName];
+}
+
 function validateField(field: SignupField, value: string) {
   const trimmed = value.trim();
   if (field.required && !trimmed) return `${field.label} is required.`;
@@ -50,7 +61,7 @@ function FieldControl({ field, value, error, onChange, lookupOptions }: { field:
           {lookupOptions ? lookupOptions.map((option) => <option key={option.id} value={option.id}>{option.name}{option.location ? ` - ${option.location}` : ''}</option>) : field.options?.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       ) : (
-        <input id={id} type={field.type ?? 'text'} value={value} onChange={(event) => onChange(event.target.value)} min={field.min} max={field.max} aria-invalid={Boolean(error)} aria-describedby={describedBy} className={inputClass(Boolean(error))} placeholder={field.placeholder} autoComplete={field.type === 'password' ? 'new-password' : undefined} />
+        <input id={id} type={field.type ?? 'text'} value={value} onChange={(event) => onChange(event.target.value)} min={field.min} max={field.max} aria-invalid={Boolean(error)} aria-describedby={describedBy} className={inputClass(Boolean(error))} placeholder={field.placeholder} autoComplete={autoCompleteFor(field.name) ?? (field.type === 'password' ? 'new-password' : undefined)} />
       )}
       {error ? <span id={`${id}-error`} role="alert" className="text-xs font-semibold text-rose-600">{error}</span> : null}
     </label>

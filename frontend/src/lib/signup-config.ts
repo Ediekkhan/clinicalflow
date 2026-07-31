@@ -6,11 +6,11 @@ export type SignupConfig = { role: SignupRole; name: string; description: string
 const identity: SignupField[] = [
   { name: 'first_name', label: 'First name', required: true }, { name: 'middle_name', label: 'Middle name', optional: true }, { name: 'last_name', label: 'Last name', required: true },
   { name: 'phone', label: 'International phone number', type: 'tel', required: true, placeholder: '+234...' }, { name: 'email', label: 'Email address', type: 'email', required: true },
-  { name: 'country', label: 'Country', required: true }, { name: 'region', label: 'State, province or region', required: true },
-  { name: 'preferred_language', label: 'Preferred language', required: true }, { name: 'time_zone', label: 'Time zone', required: true, placeholder: 'Africa/Lagos' },
+  { name: 'country', label: 'Country', type: 'select', required: true, options: ['Nigeria', 'Ghana', 'Kenya', 'South Africa', 'United Kingdom', 'United States', 'Other'] }, { name: 'region', label: 'State, province or region', type: 'select', required: true, options: ['Abia', 'Akwa Ibom', 'Anambra', 'Cross River', 'Delta', 'Edo', 'Enugu', 'Imo', 'Lagos', 'Rivers', 'Other'] },
+  { name: 'preferred_language', label: 'Preferred language', type: 'select', required: true, options: ['English', 'French', 'Hausa', 'Igbo', 'Yoruba', 'Other'] }, { name: 'time_zone', label: 'Time zone', type: 'select', required: true, options: ['Africa/Lagos', 'Africa/Accra', 'Africa/Nairobi', 'Africa/Johannesburg', 'Europe/London', 'America/New_York'] },
 ];
 const security: SignupField[] = [{ name: 'password', label: 'Password', type: 'password', required: true }, { name: 'confirm_password', label: 'Confirm password', type: 'password', required: true }];
-const location: SignupField[] = [{ name: 'latitude', label: 'Latitude', type: 'number', required: true, min: -90, max: 90 }, { name: 'longitude', label: 'Longitude', type: 'number', required: true, min: -180, max: 180 }, { name: 'address', label: 'Full address', type: 'textarea', required: true }];
+const location: SignupField[] = [{ name: 'latitude', label: 'Latitude', type: 'number', required: true, min: -90, max: 90 }, { name: 'longitude', label: 'Longitude', type: 'number', required: true, min: -180, max: 180 }, { name: 'address', label: 'Full address', type: 'textarea', required: true, placeholder: 'Street, city and state' }];
 const organizationAdmin: SignupField[] = [{ name: 'administrator_name', label: 'Primary administrator full name', required: true }, { name: 'administrator_title', label: 'Administrator job title', required: true }, { name: 'official_email', label: 'Official work email', type: 'email', required: true }, { name: 'administrator_phone', label: 'Administrator phone', type: 'tel', required: true }, ...security];
 
 export const signupConfigs: Record<SignupRole, SignupConfig> = {
