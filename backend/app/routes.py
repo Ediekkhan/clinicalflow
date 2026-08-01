@@ -1628,6 +1628,24 @@ async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depen
     return SignupApplicationResponse(id=application.id, reference=application.reference, application_type=application.application_type, onboarding_type=application.onboarding_type, status=application.status, submitted_at=application.submitted_at, login_path=SIGNUP_LOGIN_PATHS[application.application_type], dashboard_path=SIGNUP_DASHBOARD_PATHS[application.application_type] if application.status == "ACTIVE" else None)
 
 
+@router.get("/platform/signup-applications")
+async def list_signup_applications(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    await require_roles(request, session, ADMINISTRATOR_ROLES | {"admin"})
+    rows = (await session.execute(
+        select(SignupApplication, OrganizationApplication)
+        .join(OrganizationApplication, OrganizationApplication.signup_application_id == SignupApplication.id)
+        .where(SignupApplication.application_type == "hospital")
+        .order_by(SignupApplication.submitted_at.desc())
+    )).all()
+    return {"items": [{
+        "id": str(application.id), "reference": application.reference,
+        "status": application.status, "organization_name": organization.legal_name,
+        "email": application.email, "phone": application.phone,
+        "country": application.country, "latitude": organization.latitude,
+        "longitude": organization.longitude, "submitted_at": application.submitted_at,
+    } for application, organization in rows]}
+
+
 @router.patch("/platform/signup-applications/{application_id}/review")
 async def review_signup_application(application_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     reviewer = await require_roles(request, session, ADMINISTRATOR_ROLES | {"admin"})
