@@ -56,15 +56,10 @@ class Settings(BaseSettings):
     supabase_anon_key: str | None = None
     supabase_service_role_key: str | None = None
     supabase_jwt_secret: str | None = None
-    developer_review_emails: str = ""
 
     @property
     def supabase_auth_enabled(self) -> bool:
         return bool(self.supabase_url and self.supabase_anon_key)
-
-    @property
-    def authorized_developer_reviewers(self) -> set[str]:
-        return {item.strip().lower() for item in self.developer_review_emails.split(",") if item.strip()}
 
     @property
     def environment(self) -> str:
