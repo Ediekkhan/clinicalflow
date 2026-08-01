@@ -866,6 +866,9 @@ async def channel_intake(
         )
 
     if payload.intent == "BOOK_APPOINTMENT":
+        # Booking an appointment requires an active ticket context
+        if not active_ticket:
+            raise HTTPException(status_code=404, detail="No active visit for this phone")
         slot_rows = (await session.execute(
             select(ProviderSlot, Provider)
             .join(Provider, Provider.id == ProviderSlot.provider_id)
@@ -891,7 +894,7 @@ async def channel_intake(
             action="SHOW_SLOT_MENU",
             channel=channel_name,
             message="Select an available appointment time." if slot_menu else "No appointment slots are currently available.",
-            active_ticket_id=active_ticket.id if active_ticket else None,
+            active_ticket_id=active_ticket.id,
             account_group_phone=payload.customer_phone,
             menu=slot_menu,
         )
@@ -1199,7 +1202,7 @@ async def validate_signup_invitation(payload: SignupInvitationValidateRequest, s
     assert invitation is not None
     return {"valid": True, "organization_id": str(invitation.organization_id or invitation.hospital_id), "department_id": invitation.department_id, "intended_role": invitation.intended_role or invitation.permitted_role, "expires_at": invitation.expires_at}
 
-async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSession, event_type: str) -> SignupApplicationResponse:
+async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSession, event_type: str, request: Request | None = None, response: Response | None = None) -> SignupApplicationResponse:
     application = await session.get(SignupApplication, payload.application_id)
     if not application or application.application_type != "patient":
         raise HTTPException(status_code=404, detail="Signup application not found")
@@ -1218,15 +1221,23 @@ async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSess
         consent.account_id = account.id
     session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status="PHONE_VERIFICATION_REQUIRED", new_status="ACTIVE"))
     await session.commit()
+    # If a Response object was provided (e.g., in an HTTP handler), create an auth session and set cookies
+    if response is not None:
+        try:
+            # _login_account sets cookies for access and refresh tokens
+            await _login_account(account, response, session)
+        except Exception:
+            # Don't fail verification if session creation fails; return success but without cookies
+            pass
     return SignupApplicationResponse(id=application.id, reference=application.reference, application_type="patient", onboarding_type=application.onboarding_type, status="ACTIVE", submitted_at=application.submitted_at, login_path="/login", dashboard_path="/dashboard")
 
 @router.post("/signup/verify-phone", response_model=SignupApplicationResponse)
-async def verify_signup_phone(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _verify_patient(payload, session, "PHONE_OTP")
+async def verify_signup_phone(payload: SignupVerificationRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _verify_patient(payload, session, "PHONE_OTP", request, response)
 
 @router.post("/signup/verify-email", response_model=SignupApplicationResponse)
-async def verify_signup_email(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _verify_patient(payload, session, "EMAIL_OTP")
+async def verify_signup_email(payload: SignupVerificationRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _verify_patient(payload, session, "EMAIL_OTP", request, response)
 
 @router.get("/signup/status/{application_id}", response_model=SignupApplicationResponse)
 async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
