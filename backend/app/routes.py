@@ -1234,6 +1234,12 @@ SIGNUP_PENDING_STATUSES = {"patient": "PHONE_VERIFICATION_REQUIRED", "specialist
 SIGNUP_LOGIN_PATHS = {"patient": "/login", "specialist": "/specialist/login", "hospital": "/hospital/login", "clinic": "/auth/login", "nurse": "/auth/login", "pharmacy": "/auth/login", "laboratory": "/auth/login", "hmo": "/auth/login", "government": "/auth/login", "platform-admin": "/auth/login"}
 SIGNUP_DASHBOARD_PATHS = {"patient": "/dashboard", "specialist": "/specialist/dashboard", "hospital": "/hospital/dashboard", "clinic": "/clinic/dashboard", "nurse": "/nurse/dashboard", "pharmacy": "/pharmacy/dashboard", "laboratory": "/lab/dashboard", "hmo": "/hmo/dashboard", "government": "/moh/dashboard", "platform-admin": "/dashboard/admin"}
 ADMINISTRATOR_ROLES = {"SUPER_ADMIN", "SECURITY_ADMIN", "COMPLIANCE_ADMIN", "TENANT_REVIEWER", "SUPPORT_ADMIN", "AUDITOR"}
+
+async def require_developer_reviewer(request: Request, session: AsyncSession) -> AuthAccount:
+    account = await require_account(request, session)
+    if (account.email or "").strip().lower() not in settings.authorized_developer_reviewers:
+        raise HTTPException(status_code=403, detail="Developer review access required")
+    return account
 INVITATION_ROLES = {"specialist": {"specialist", "doctor"}, "nurse": {"nurse"}, "government": {"government", "moh"}, "platform-admin": {"platform-admin", "admin", *ADMINISTRATOR_ROLES}}
 ORGANIZATION_SIGNUP_TYPES = {"hospital", "clinic", "pharmacy", "laboratory", "hmo", "government"}
 PROFESSIONAL_SIGNUP_TYPES = {"specialist", "nurse"}
@@ -1630,7 +1636,7 @@ async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depen
 
 @router.get("/platform/signup-applications")
 async def list_signup_applications(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    await require_roles(request, session, ADMINISTRATOR_ROLES | {"admin"})
+    await require_developer_reviewer(request, session)
     rows = (await session.execute(
         select(SignupApplication, OrganizationApplication)
         .join(OrganizationApplication, OrganizationApplication.signup_application_id == SignupApplication.id)
@@ -1648,7 +1654,7 @@ async def list_signup_applications(request: Request, session: AsyncSession = Dep
 
 @router.patch("/platform/signup-applications/{application_id}/review")
 async def review_signup_application(application_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    reviewer = await require_roles(request, session, ADMINISTRATOR_ROLES | {"admin"})
+    reviewer = await require_developer_reviewer(request, session)
     payload = await request.json()
     decision = str(payload.get("decision") or "").upper()
     if decision not in {"APPROVE", "REJECT"}:
