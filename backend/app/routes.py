@@ -446,6 +446,10 @@ async def login(role: str, payload: AuthLoginRequest, request: Request, response
                     account.supabase_user_id = supabase_id
             if account:
                 return await _login_account(account, request, response, session)
+        if role == "hospital_admin":
+            pending = await session.scalar(select(SignupApplication).where(func.lower(SignupApplication.email) == identifier, SignupApplication.application_type.in_(ORGANIZATION_SIGNUP_TYPES), SignupApplication.status.in_({"PENDING_FACILITY_VERIFICATION", "PENDING_REVIEW", "PENDING"})))
+            if pending:
+                raise HTTPException(status_code=403, detail="Your hospital application is still pending facility approval. You can sign in after an administrator approves it.")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     now = utc_now()
     if account and account.locked_until and account.locked_until.replace(tzinfo=UTC) > now:
@@ -456,6 +460,10 @@ async def login(role: str, payload: AuthLoginRequest, request: Request, response
             if account.failed_login_attempts >= settings.auth_max_failed_attempts:
                 account.locked_until = now + timedelta(minutes=settings.auth_lockout_minutes)
             await session.commit()
+        if role == "hospital_admin":
+            pending = await session.scalar(select(SignupApplication).where(func.lower(SignupApplication.email) == identifier, SignupApplication.application_type.in_(ORGANIZATION_SIGNUP_TYPES), SignupApplication.status.in_({"PENDING_FACILITY_VERIFICATION", "PENDING_REVIEW", "PENDING"})))
+            if pending:
+                raise HTTPException(status_code=403, detail="Your hospital application is still pending facility approval. You can sign in after an administrator approves it.")
         raise HTTPException(status_code=401, detail="Invalid credentials")
     account.failed_login_attempts = 0
     account.locked_until = None
