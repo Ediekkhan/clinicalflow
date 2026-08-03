@@ -47,6 +47,7 @@ async def ensure_sqlite_additive_schema(engine) -> None:
         session_columns = await conn.run_sync(table_columns, "auth_sessions")
         appointment_columns = await conn.run_sync(table_columns, "appointments")
         notification_columns = await conn.run_sync(table_columns, "notifications")
+        auth_account_columns = await conn.run_sync(table_columns, "auth_accounts")
         staff_membership_columns = await conn.run_sync(table_columns, "staff_memberships")
         staff_invitation_columns = await conn.run_sync(table_columns, "staff_invitations")
         if tenant_columns and "latitude" not in tenant_columns:
@@ -55,6 +56,9 @@ async def ensure_sqlite_additive_schema(engine) -> None:
             await conn.execute(text("ALTER TABLE tenants ADD COLUMN longitude FLOAT"))
         if tenant_columns and "accepts_patients" not in tenant_columns:
             await conn.execute(text("ALTER TABLE tenants ADD COLUMN accepts_patients BOOLEAN NOT NULL DEFAULT 1"))
+        if auth_account_columns and "supabase_user_id" not in auth_account_columns:
+            await conn.execute(text("ALTER TABLE auth_accounts ADD COLUMN supabase_user_id CHAR(32)"))
+            await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_auth_accounts_supabase_user_id ON auth_accounts (supabase_user_id)"))
         if ticket_columns and "patient_latitude" not in ticket_columns:
             await conn.execute(text("ALTER TABLE tickets ADD COLUMN patient_latitude FLOAT"))
         if ticket_columns and "patient_longitude" not in ticket_columns:

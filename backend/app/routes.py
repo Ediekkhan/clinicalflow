@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Appointment, ApplicationReviewHistory, AppointmentAssignmentRequest, AuthAccount, AuthSession, AuditLog, BreakGlassGrant, CareTeamAssignment, ClinicalPrivilege, ClientMutation, ConsentRecord, ConsultationNote, DemoRequest, FacilityAcceptance, FacilityRegistry, FacilityService, HealthCardCredential, HospitalDepartment, HospitalDoctorMembership, LaboratoryOrder, DiagnosticReport, Notification, NotificationDelivery, OperationalRecord, OrganizationApplication, OutboxEvent, PatientConsentDirective, PatientFacilityIdentity, PatientRegistry, ProfessionalCredential, ProvenanceRecord, ProviderAvailability, ProviderRegistry, RoutingCandidate, RoutingDecision, SignupApplication, Specialty, StaffInvitation, StaffMembership, Provider, ProviderSlot, SpecialistMessage, TerminologyRelease, Ticket, Tenant, VerificationDocument, VerificationEvent
+from app.models import Appointment, ApplicationReviewHistory, AppointmentAssignmentRequest, AuthAccount, AuthSession, AuditLog, BreakGlassGrant, CareTeamAssignment, ClinicalPrivilege, ClientMutation, ConsentRecord, ConsultationNote, DemoRequest, FacilityAcceptance, FacilityAdminActivation, FacilityRegistry, FacilityService, FacilityVerificationCase, HealthCardCredential, HospitalDepartment, HospitalDoctorMembership, LaboratoryOrder, DiagnosticReport, Notification, NotificationDelivery, OperationalRecord, OrganizationApplication, OutboxEvent, PatientConsentDirective, PatientFacilityIdentity, PatientRegistry, ProfessionalCredential, ProvenanceRecord, ProviderAvailability, ProviderRegistry, RoutingCandidate, RoutingDecision, SignupApplication, Specialty, StaffInvitation, StaffMembership, Provider, ProviderSlot, SpecialistMessage, TerminologyRelease, Ticket, Tenant, VerificationDocument, VerificationEvent, VerificationFinding, ExternalRegistryCheck
 from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, SignupApplicationCreate, SignupApplicationResponse, SignupInvitationValidateRequest, SignupVerificationRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
 from app.services.audit_service import AuditAction, write_audit_log
 from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, hash_password, session_for_refresh_token, token_hash, utc_now, verify_password
@@ -21,6 +21,7 @@ from app.services.channel_service import SMS_TEMPLATES, intent_from_text, normal
 from app.services.facility_routing import rank_eligible_facilities, select_nearest_eligible_hospital, valid_coordinates
 from app.services.registry_service import ensure_facility_registry, ensure_patient_registry, ensure_provider_registry, issue_health_card_credential, patient_duplicate_key
 from app.services.supabase_auth import password_login, provision_user, SupabaseAuthError
+from app.services.facility_verification import review_due_at
 
 router = APIRouter(prefix="/api/v1")
 
@@ -1234,6 +1235,7 @@ SIGNUP_PENDING_STATUSES = {"patient": "PHONE_VERIFICATION_REQUIRED", "specialist
 SIGNUP_LOGIN_PATHS = {"patient": "/login", "specialist": "/specialist/login", "hospital": "/hospital/login", "clinic": "/auth/login", "nurse": "/auth/login", "pharmacy": "/auth/login", "laboratory": "/auth/login", "hmo": "/auth/login", "government": "/auth/login", "platform-admin": "/auth/login"}
 SIGNUP_DASHBOARD_PATHS = {"patient": "/dashboard", "specialist": "/specialist/dashboard", "hospital": "/hospital/dashboard", "clinic": "/clinic/dashboard", "nurse": "/nurse/dashboard", "pharmacy": "/pharmacy/dashboard", "laboratory": "/lab/dashboard", "hmo": "/hmo/dashboard", "government": "/moh/dashboard", "platform-admin": "/dashboard/admin"}
 ADMINISTRATOR_ROLES = {"SUPER_ADMIN", "SECURITY_ADMIN", "COMPLIANCE_ADMIN", "TENANT_REVIEWER", "SUPPORT_ADMIN", "AUDITOR"}
+FACILITY_VERIFIER_ROLES = {"facility_verifier", "verification_supervisor"}
 INVITATION_ROLES = {"specialist": {"specialist", "doctor"}, "nurse": {"nurse"}, "government": {"government", "moh"}, "platform-admin": {"platform-admin", "admin", *ADMINISTRATOR_ROLES}}
 ORGANIZATION_SIGNUP_TYPES = {"hospital", "clinic", "pharmacy", "laboratory", "hmo", "government"}
 PROFESSIONAL_SIGNUP_TYPES = {"specialist", "nurse"}
@@ -1391,7 +1393,12 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
             status="PENDING",
         ))
     if role in ORGANIZATION_SIGNUP_TYPES:
-        session.add(OrganizationApplication(signup_application_id=application.id, legal_name=payload.data.get("legal_name", ""), registration_number=payload.data.get("registration_number"), licence_number=payload.data.get("licence_number") or payload.data.get("accreditation_number"), regulatory_authority=payload.data.get("regulatory_authority"), latitude=latitude, longitude=longitude, verification_status=application.status))
+        organization = OrganizationApplication(signup_application_id=application.id, legal_name=payload.data.get("legal_name", ""), registration_number=payload.data.get("registration_number"), licence_number=payload.data.get("licence_number") or payload.data.get("accreditation_number"), regulatory_authority=payload.data.get("regulatory_authority"), latitude=latitude, longitude=longitude, verification_status=application.status)
+        session.add(organization)
+        await session.flush()
+        if role == "hospital":
+            submitted_at = application.submitted_at or utc_now()
+            session.add(FacilityVerificationCase(signup_application_id=application.id, organization_application_id=organization.id, status="REGISTRY_CHECK_PENDING", priority="STANDARD", submitted_at=submitted_at, review_due_at=review_due_at(submitted_at), last_transition_at=submitted_at, government_check_status="PENDING"))
     if role in PROFESSIONAL_SIGNUP_TYPES:
         expiration = payload.data.get("licence_expiration")
         expires_at = datetime.fromisoformat(expiration) if expiration else None
@@ -1628,12 +1635,118 @@ async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depen
     return SignupApplicationResponse(id=application.id, reference=application.reference, application_type=application.application_type, onboarding_type=application.onboarding_type, status=application.status, submitted_at=application.submitted_at, login_path=SIGNUP_LOGIN_PATHS[application.application_type], dashboard_path=SIGNUP_DASHBOARD_PATHS[application.application_type] if application.status == "ACTIVE" else None)
 
 
+@router.get("/auth/facility-admin/activation/{activation_token}")
+async def inspect_facility_admin_activation(activation_token: str, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    activation = await session.scalar(select(FacilityAdminActivation).where(FacilityAdminActivation.token_hash == token_hash(activation_token)))
+    if not activation or activation.status != "PENDING" or activation.expires_at <= utc_now() or activation.revoked_at is not None:
+        raise HTTPException(status_code=400, detail="Activation link is invalid or expired")
+    account = await session.get(AuthAccount, activation.account_id)
+    return {"valid": True, "email": account.email if account else None, "expires_at": activation.expires_at}
+
+
+@router.post("/auth/facility-admin/activate")
+async def activate_facility_admin(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    payload = await request.json()
+    raw_token = str(payload.get("token") or "")
+    if not raw_token or not payload.get("password") or not payload.get("mfa_setup") or not payload.get("terms_accepted"):
+        raise HTTPException(status_code=422, detail="Activation requires a token, new password, MFA setup, and terms acceptance")
+    activation = await session.scalar(select(FacilityAdminActivation).where(FacilityAdminActivation.token_hash == token_hash(raw_token)).with_for_update())
+    if not activation or activation.status != "PENDING" or activation.expires_at <= utc_now() or activation.revoked_at is not None:
+        raise HTTPException(status_code=400, detail="Activation link is invalid or expired")
+    account = await session.get(AuthAccount, activation.account_id, with_for_update=True)
+    if not account:
+        raise HTTPException(status_code=404, detail="Activation account not found")
+    membership = await session.scalar(select(StaffMembership).where(StaffMembership.user_id == account.id, StaffMembership.hospital_id == account.tenant_id).with_for_update())
+    account.password_hash = hash_password(str(payload["password"]))
+    account.is_active = True
+    account.email_verified_at = utc_now()
+    if membership:
+        membership.is_active = True
+        membership.employment_status = "ACTIVE"
+        membership.verification_status = "VERIFIED"
+    activation.status = "USED"
+    activation.used_at = utc_now()
+    activation.activated_at = activation.used_at
+    case = await session.scalar(select(FacilityVerificationCase).where(FacilityVerificationCase.id == activation.verification_case_id).with_for_update())
+    if case:
+        case.status = "SETUP_REQUIRED"
+    await session.commit()
+    return {"status": "SETUP_REQUIRED", "tenant_id": str(account.tenant_id)}
+
+
+@router.get("/hospital/readiness")
+async def hospital_readiness(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    tenant = await session.get(Tenant, account.tenant_id)
+    facility = await session.scalar(select(FacilityRegistry).where(FacilityRegistry.tenant_id == account.tenant_id))
+    departments = await session.scalar(select(func.count()).select_from(HospitalDepartment).where(HospitalDepartment.hospital_id == account.tenant_id, HospitalDepartment.status == "ACTIVE"))
+    staff = await session.scalar(select(func.count()).select_from(StaffMembership).where(StaffMembership.hospital_id == account.tenant_id, StaffMembership.is_active.is_(True), StaffMembership.verification_status == "VERIFIED", StaffMembership.role.in_({"doctor", "specialist", "nurse"})))
+    services = await session.scalar(select(func.count()).select_from(FacilityService).where(FacilityService.facility_registry_id == facility.id, FacilityService.status == "ACTIVE")) if facility else 0
+    checks = {"location": bool(tenant and tenant.latitude is not None and tenant.longitude is not None), "departments": bool(departments), "services": bool(services), "verified_staff": bool(staff), "accepts_patients": bool(facility and facility.accepts_patients)}
+    return {"status": "READY" if all(checks.values()) else "SETUP_REQUIRED", "checks": checks}
+
+
+@router.post("/hospital/readiness/submit")
+async def submit_hospital_readiness(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    readiness = await hospital_readiness(request, session)
+    if readiness["status"] != "READY":
+        raise HTTPException(status_code=422, detail={"message": "Complete the hospital setup checklist before submitting", "checks": readiness["checks"]})
+    case = await session.scalar(select(FacilityVerificationCase).join(SignupApplication, SignupApplication.id == FacilityVerificationCase.signup_application_id).where(SignupApplication.account_id == account.id).with_for_update())
+    if case:
+        case.status = "READINESS_REVIEW"
+    await session.commit()
+    return {"status": "READINESS_REVIEW"}
+
+
+@router.post("/platform/facility-verifications/{case_id}/documents/{document_id}/review")
+async def review_verification_document(case_id: uuid.UUID, document_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    reviewer = await require_facility_reviewer(request, session)
+    document = await session.scalar(select(VerificationDocument).where(VerificationDocument.id == document_id, VerificationDocument.signup_application_id == select(FacilityVerificationCase.signup_application_id).where(FacilityVerificationCase.id == case_id).scalar_subquery()))
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    payload = await request.json()
+    status = str(payload.get("status") or "").upper()
+    if status not in {"VALID", "INVALID", "MORE_INFORMATION_REQUIRED"}:
+        raise HTTPException(status_code=422, detail="Invalid document review status")
+    document.verification_status = status
+    await session.commit()
+    return {"id": str(document.id), "status": document.verification_status, "reviewed_by": str(reviewer.id)}
+
+
+@router.post("/platform/facility-verifications/{case_id}/request-information")
+async def request_verification_information(case_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    reviewer = await require_facility_reviewer(request, session)
+    case = await session.scalar(select(FacilityVerificationCase).where(FacilityVerificationCase.id == case_id).with_for_update())
+    if not case:
+        raise HTTPException(status_code=404, detail="Verification case not found")
+    payload = await request.json()
+    reason = str(payload.get("reason") or "Additional verification information is required").strip()
+    case.status = "MORE_INFORMATION_REQUIRED"
+    case.reviewer_notes = reason
+    await session.commit()
+    return {"id": str(case.id), "status": case.status, "reason": reason, "reviewer_id": str(reviewer.id)}
+
+
+@router.post("/platform/facility-verifications/{case_id}/resubmit")
+async def resubmit_verification(case_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    case = await session.scalar(select(FacilityVerificationCase).where(FacilityVerificationCase.id == case_id).with_for_update())
+    if not case:
+        raise HTTPException(status_code=404, detail="Verification case not found")
+    if case.status != "MORE_INFORMATION_REQUIRED":
+        raise HTTPException(status_code=409, detail="This case is not awaiting information")
+    case.status = "RESUBMITTED"
+    await session.commit()
+    return {"id": str(case.id), "status": case.status}
+
+
 @router.get("/platform/signup-applications")
 async def list_signup_applications(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    await require_roles(request, session, ADMINISTRATOR_ROLES | {"admin"})
+    await require_facility_reviewer(request, session)
     rows = (await session.execute(
-        select(SignupApplication, OrganizationApplication)
+        select(SignupApplication, OrganizationApplication, FacilityVerificationCase)
         .join(OrganizationApplication, OrganizationApplication.signup_application_id == SignupApplication.id)
+        .outerjoin(FacilityVerificationCase, FacilityVerificationCase.signup_application_id == SignupApplication.id)
         .where(SignupApplication.application_type == "hospital")
         .order_by(SignupApplication.submitted_at.desc())
     )).all()
@@ -1643,12 +1756,73 @@ async def list_signup_applications(request: Request, session: AsyncSession = Dep
         "email": application.email, "phone": application.phone,
         "country": application.country, "latitude": organization.latitude,
         "longitude": organization.longitude, "submitted_at": application.submitted_at,
-    } for application, organization in rows]}
+        "verification_case_id": str(case.id) if case else None,
+        "verification_status": case.status if case else application.status,
+        "review_due_at": case.review_due_at if case else None,
+    } for application, organization, case in rows]}
+
+
+async def require_facility_reviewer(request: Request, session: AsyncSession, *, supervisor: bool = False) -> AuthAccount:
+    account = await require_roles(request, session, FACILITY_VERIFIER_ROLES)
+    if supervisor and account.role != "verification_supervisor":
+        raise HTTPException(status_code=403, detail="Verification supervisor access required")
+    return account
+
+
+@router.get("/platform/facility-verifications")
+async def list_facility_verifications(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    reviewer = await require_facility_reviewer(request, session)
+    statement = select(FacilityVerificationCase, SignupApplication, OrganizationApplication).join(SignupApplication, SignupApplication.id == FacilityVerificationCase.signup_application_id).join(OrganizationApplication, OrganizationApplication.id == FacilityVerificationCase.organization_application_id)
+    if reviewer.role == "facility_verifier":
+        statement = statement.where(or_(FacilityVerificationCase.assigned_reviewer_id == reviewer.id, FacilityVerificationCase.assigned_reviewer_id.is_(None)))
+    rows = (await session.execute(statement.order_by(FacilityVerificationCase.review_due_at.asc()))).all()
+    return {"items": [{"id": str(case.id), "application_id": str(application.id), "reference": application.reference, "status": case.status, "priority": case.priority, "organization_name": organization.legal_name, "country": application.country, "review_due_at": case.review_due_at, "assigned_reviewer_id": str(case.assigned_reviewer_id) if case.assigned_reviewer_id else None, "government_check_status": case.government_check_status} for case, application, organization in rows]}
+
+
+@router.get("/platform/facility-verifications/{case_id}")
+async def get_facility_verification(case_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    await require_facility_reviewer(request, session)
+    case = await session.get(FacilityVerificationCase, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Verification case not found")
+    application = await session.get(SignupApplication, case.signup_application_id)
+    organization = await session.get(OrganizationApplication, case.organization_application_id)
+    documents = (await session.scalars(select(VerificationDocument).where(VerificationDocument.signup_application_id == case.signup_application_id))).all()
+    findings = (await session.scalars(select(VerificationFinding).where(VerificationFinding.verification_case_id == case.id))).all()
+    return {"case": {"id": str(case.id), "status": case.status, "priority": case.priority, "review_due_at": case.review_due_at, "government_check_status": case.government_check_status, "reviewer_notes": case.reviewer_notes}, "application": {"id": str(application.id), "reference": application.reference, "email": application.email, "phone": application.phone, "country": application.country, "payload": json.loads(application.payload_json)}, "organization": {"legal_name": organization.legal_name, "registration_number": organization.registration_number, "licence_number": organization.licence_number, "latitude": organization.latitude, "longitude": organization.longitude}, "documents": [{"id": str(document.id), "type": document.document_type, "name": document.original_name, "status": document.verification_status} for document in documents], "findings": [{"id": str(finding.id), "type": finding.category, "severity": finding.severity, "status": finding.status, "description": finding.description} for finding in findings]}
+
+
+@router.post("/platform/facility-verifications/{case_id}/assign")
+async def assign_facility_verification(case_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    reviewer = await require_facility_reviewer(request, session)
+    case = await session.scalar(select(FacilityVerificationCase).where(FacilityVerificationCase.id == case_id).with_for_update())
+    if not case:
+        raise HTTPException(status_code=404, detail="Verification case not found")
+    if case.assigned_reviewer_id and case.assigned_reviewer_id != reviewer.id:
+        raise HTTPException(status_code=409, detail="Case is already assigned")
+    case.assigned_reviewer_id = reviewer.id
+    if case.status == "REGISTRY_CHECK_PENDING":
+        case.status = "UNDER_REVIEW"
+    await session.commit()
+    return {"id": str(case.id), "assigned_reviewer_id": str(reviewer.id), "status": case.status}
+
+
+@router.post("/platform/facility-verifications/{case_id}/findings")
+async def create_verification_finding(case_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    reviewer = await require_facility_reviewer(request, session)
+    case = await session.get(FacilityVerificationCase, case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Verification case not found")
+    payload = await request.json()
+    finding = VerificationFinding(verification_case_id=case.id, category=str(payload.get("finding_type") or payload.get("category") or "OTHER"), severity=str(payload.get("severity") or "WARNING"), description=str(payload.get("description") or ""), created_by_id=reviewer.id)
+    session.add(finding)
+    await session.commit()
+    return {"id": str(finding.id), "status": finding.status}
 
 
 @router.patch("/platform/signup-applications/{application_id}/review")
 async def review_signup_application(application_id: uuid.UUID, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    reviewer = await require_roles(request, session, ADMINISTRATOR_ROLES | {"admin"})
+    reviewer = await require_facility_reviewer(request, session)
     payload = await request.json()
     decision = str(payload.get("decision") or "").upper()
     if decision not in {"APPROVE", "REJECT"}:
@@ -1676,31 +1850,38 @@ async def review_signup_application(application_id: uuid.UUID, request: Request,
     existing = await session.scalar(select(AuthAccount).where(func.lower(AuthAccount.identifier) == admin_email))
     if existing:
         raise HTTPException(status_code=409, detail="Administrator account already exists")
-    tenant = Tenant(name=organization.legal_name, state_location=str(data.get("jurisdiction") or data.get("state") or application.country), latitude=organization.latitude, longitude=organization.longitude, accepts_patients=application.application_type in {"hospital", "clinic"}, status="ACTIVE")
+    tenant = Tenant(name=organization.legal_name, state_location=str(data.get("jurisdiction") or data.get("state") or application.country), latitude=organization.latitude, longitude=organization.longitude, accepts_patients=False, status="VERIFIED_PENDING_SETUP")
     session.add(tenant)
     await session.flush()
     facility = await ensure_facility_registry(session, tenant)
     facility.facility_type = {"clinic": "CLINIC", "pharmacy": "PHARMACY", "laboratory": "LABORATORY", "hmo": "PAYER", "government": "GOVERNMENT"}.get(application.application_type, "HOSPITAL")
     facility.country = application.country
     facility.jurisdiction = tenant.state_location
-    facility.status = "ACTIVE"
-    facility.accepts_patients = tenant.accepts_patients
+    facility.status = "VERIFIED_PENDING_SETUP"
+    facility.accepts_patients = False
     department_name = str(payload.get("default_department") or "Administration").strip() or "Administration"
     department = HospitalDepartment(hospital_id=tenant.id, name=department_name, code=f"ADMIN-{tenant.id.hex[:8].upper()}", status="ACTIVE")
     session.add(department)
     name_parts = str(data.get("administrator_name") or data.get("full_name") or "Facility Administrator").strip().split(maxsplit=1)
     admin_role = "hospital_admin" if application.application_type in {"hospital", "clinic"} else "admin"
-    admin = AuthAccount(tenant_id=tenant.id, role=admin_role, identifier=admin_email, password_hash=application.password_hash, first_name=name_parts[0], last_name=name_parts[1] if len(name_parts) > 1 else "", email=admin_email, is_active=True, email_verified_at=utc_now())
+    admin = AuthAccount(tenant_id=tenant.id, role=admin_role, identifier=admin_email, password_hash=None, first_name=name_parts[0], last_name=name_parts[1] if len(name_parts) > 1 else "", email=admin_email, is_active=False)
     session.add(admin)
     await session.flush()
-    membership = StaffMembership(user_id=admin.id, hospital_id=tenant.id, department_id=department.name, department_ref_id=department.id, role=admin_role, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, is_on_duty=True, active_from=utc_now())
+    membership = StaffMembership(user_id=admin.id, hospital_id=tenant.id, department_id=department.name, department_ref_id=department.id, role=admin_role, verification_status="ACTIVATION_PENDING", employment_status="PENDING", is_active=False, is_on_duty=False, active_from=utc_now())
     session.add(membership)
     application.account_id = admin.id
-    application.status = "ACTIVE"
-    organization.verification_status = "VERIFIED"
+    activation_token = secrets.token_urlsafe(32)
+    session.add(FacilityAdminActivation(verification_case_id=(await session.scalar(select(FacilityVerificationCase.id).where(FacilityVerificationCase.signup_application_id == application.id))), account_id=admin.id, token_hash=token_hash(activation_token), expires_at=utc_now() + timedelta(hours=48), status="PENDING"))
+    application.status = "ADMIN_ACTIVATION_PENDING"
+    organization.verification_status = "VERIFIED_PENDING_SETUP"
+    case = await session.scalar(select(FacilityVerificationCase).where(FacilityVerificationCase.signup_application_id == application.id).with_for_update())
+    if case:
+        case.status = "ADMIN_ACTIVATION_PENDING"
+        case.resolved_by_id = reviewer.id
+        case.reviewer_notes = str(payload.get("reason") or "") or None
     session.add(ApplicationReviewHistory(signup_application_id=application.id, reviewer_account_id=reviewer.id, previous_status=previous_status, new_status=application.status, internal_notes=str(payload.get("reason") or "") or None))
     await session.commit()
-    return {"id": str(application.id), "status": application.status, "tenant_id": str(tenant.id), "admin_account_id": str(admin.id), "membership_id": str(membership.id)}
+    return {"id": str(application.id), "status": application.status, "tenant_id": str(tenant.id), "admin_account_id": str(admin.id), "membership_id": str(membership.id), "activation_required": True, "activation_token": activation_token}
 
 @router.get("/public/pricing")
 async def public_pricing() -> dict[str, Any]:

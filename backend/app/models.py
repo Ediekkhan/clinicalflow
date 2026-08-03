@@ -589,6 +589,79 @@ class ApplicationReviewHistory(Base):
     internal_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
+
+class FacilityVerificationCase(Base):
+    __tablename__ = "facility_verification_cases"
+    __table_args__ = (
+        UniqueConstraint("signup_application_id", name="uq_facility_verification_case_application"),
+        Index("ix_facility_verification_cases_queue", "status", "review_due_at", "priority"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    signup_application_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("signup_applications.id"), nullable=False)
+    organization_application_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organization_applications.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(64), nullable=False, default="SUBMITTED")
+    priority: Mapped[str] = mapped_column(String(32), nullable=False, default="STANDARD")
+    assigned_reviewer_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True, index=True)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    review_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_transition_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    government_check_status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    risk_flags_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ExternalRegistryCheck(Base):
+    __tablename__ = "external_registry_checks"
+    __table_args__ = (Index("ix_external_registry_checks_case", "verification_case_id", "checked_at"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    verification_case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("facility_verification_cases.id"), nullable=False)
+    registry_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    query_reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    result: Mapped[str] = mapped_column(String(32), nullable=False)
+    matched_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    response_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checked_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+
+
+class VerificationFinding(Base):
+    __tablename__ = "verification_findings"
+    __table_args__ = (Index("ix_verification_findings_case_status", "verification_case_id", "status"),)
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    verification_case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("facility_verification_cases.id"), nullable=False)
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    severity: Mapped[str] = mapped_column(String(32), nullable=False, default="INFO")
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="OPEN")
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    resolved_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class FacilityAdminActivation(Base):
+    __tablename__ = "facility_admin_activations"
+    __table_args__ = (Index("ix_facility_admin_activations_token", "token_hash", unique=True),)
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    verification_case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("facility_verification_cases.id"), nullable=False)
+    account_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="PENDING")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+
 class VerificationEvent(Base):
     __tablename__ = "verification_events"
     __table_args__ = (Index("ix_verification_events_application_type", "signup_application_id", "event_type"),)
