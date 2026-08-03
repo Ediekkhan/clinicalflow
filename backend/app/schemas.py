@@ -69,6 +69,7 @@ class AuthProfileResponse(BaseModel):
     gender: str | None = None
     state: str | None = None
     lga: str | None = None
+    country_code: str = "NG"
     emergency_contact: str | None = None
     hmo_provider: str | None = None
     blood_group: str | None = None

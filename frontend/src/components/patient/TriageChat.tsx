@@ -48,8 +48,16 @@ export function TriageChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAnalysis, setPendingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [countryCode, setCountryCode] = useState('');
   const { coords, error: locationError, isLoading: isLocationLoading, requestLocation } = useGeolocation();
   const responseComplete = Boolean(result && !isLoading);
+
+  useEffect(() => {
+    void api.get('/api/v1/auth/patient/me').then((profile) => {
+      const value = profile as { current_country_code?: string; country_code?: string; country?: string };
+      setCountryCode(String(value.current_country_code || value.country_code || value.country || '').trim().slice(0, 2).toUpperCase());
+    }).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (pendingAnalysis && coords && !isLoading) {
@@ -65,13 +73,17 @@ export function TriageChat() {
       setError('Add your current location before analysis so we can route this ticket to a clinically suitable registered hospital.');
       return;
     }
+    if (!/^[A-Z]{2}$/.test(countryCode)) {
+      setError('Select your current country before analysis so we never route you across borders automatically.');
+      return;
+    }
     setUserMessage(symptomText);
     setText('');
     setResult(null);
     setError(null);
     setIsLoading(true);
 
-    const payload = { symptom_description: symptomText, latitude: coords.latitude, longitude: coords.longitude };
+    const payload = { symptom_description: symptomText, latitude: coords.latitude, longitude: coords.longitude, current_country_code: countryCode };
     try {
       const data = (await api.post('/api/v1/patient/triage', payload)) as TriageResponse;
       if (data.ticket?.id && data.appointment_slot?.slot_id) {

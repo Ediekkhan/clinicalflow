@@ -60,6 +60,7 @@ class AuthAccount(Base):
     gender: Mapped[str | None] = mapped_column(String(32), nullable=True)
     state: Mapped[str | None] = mapped_column(String(128), nullable=True)
     lga: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    country_code: Mapped[str] = mapped_column(String(2), nullable=False, default="NG")
     emergency_contact: Mapped[str | None] = mapped_column(String(32), nullable=True)
     hmo_provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
     blood_group: Mapped[str | None] = mapped_column(String(8), nullable=True)
@@ -238,6 +239,13 @@ class RoutingDecision(Base):
     manual_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     overridden_by_account_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
     overridden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    patient_country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    selected_hospital_country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    cross_border: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    eligibility_reasons: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejected_candidates: Mapped[str | None] = mapped_column(Text, nullable=True)
+    route_distance_km: Mapped[float | None] = mapped_column(Float, nullable=True)
+    routing_policy_version: Mapped[str] = mapped_column(String(32), nullable=False, default="country-first-v1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 
 

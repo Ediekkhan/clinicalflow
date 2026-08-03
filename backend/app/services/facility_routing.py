@@ -44,6 +44,11 @@ def valid_coordinates(latitude: float | None, longitude: float | None) -> bool:
     return latitude is not None and longitude is not None and -90 <= latitude <= 90 and -180 <= longitude <= 180
 
 
+def same_country(patient_country_code: str | None, hospital_country_code: str | None) -> bool:
+    """Country is a hard routing boundary; missing patient country is never guessed."""
+    return bool(patient_country_code and hospital_country_code and patient_country_code.strip().upper() == hospital_country_code.strip().upper())
+
+
 def haversine_km(origin_latitude: float, origin_longitude: float, destination_latitude: float, destination_longitude: float) -> float:
     origin_lat = radians(origin_latitude)
     origin_lng = radians(origin_longitude)
@@ -110,6 +115,8 @@ async def rank_eligible_facilities(
     clinical_route: Any,
     *,
     preferred_facility_id: UUID | None = None,
+    patient_country_code: str | None = None,
+    max_distance_km: float | None = None,
 ) -> tuple[FacilityCandidate, ...]:
     if not valid_coordinates(patient_latitude, patient_longitude):
         return ()
@@ -126,8 +133,11 @@ async def rank_eligible_facilities(
     candidates: list[FacilityCandidate] = []
     for tenant, registry in rows:
         reasons: list[str] = []
+        country_match = not patient_country_code or str(registry.country).upper() == patient_country_code.upper()
+        if not country_match:
+            reasons.append("Facility is outside the patient's current country")
         coordinates_valid = valid_coordinates(tenant.latitude, tenant.longitude)
-        distance = haversine_km(patient_latitude, patient_longitude, tenant.latitude, tenant.longitude) if coordinates_valid else None
+        distance = haversine_km(patient_latitude, patient_longitude, tenant.latitude, tenant.longitude) if coordinates_valid and country_match else None
         capability = await _facility_capability(session, registry, tenant.id, specialty)
         staff_coverage = await _staff_coverage(session, tenant.id, specialty)
         capacity = registry.capacity_status.upper() not in {"FULL", "CLOSED", "UNAVAILABLE"}
@@ -141,7 +151,9 @@ async def rank_eligible_facilities(
         if not staff_coverage: reasons.append(f"No verified on-duty coverage for {specialty}")
         if not capacity: reasons.append("Facility is at capacity")
         if severe and not emergency: reasons.append("Critical cases require emergency capability")
-        eligible = active and accepting and coordinates_valid and capability and staff_coverage and capacity and (not severe or emergency)
+        within_radius = max_distance_km is None or (distance is not None and distance <= max_distance_km)
+        if not within_radius: reasons.append("Facility is outside the configured service radius")
+        eligible = country_match and active and accepting and coordinates_valid and capability and staff_coverage and capacity and within_radius and (not severe or emergency)
         score = 0.0
         if eligible:
             score = 100.0 + (30.0 if severe and emergency else 10.0 if emergency else 0.0) + 20.0 + 10.0
@@ -163,8 +175,10 @@ async def select_nearest_eligible_hospital(
     clinical_route: Any,
     *,
     preferred_facility_id: UUID | None = None,
+    patient_country_code: str | None = None,
+    max_distance_km: float | None = None,
 ) -> FacilityRoute | None:
-    candidates = await rank_eligible_facilities(session, patient_latitude, patient_longitude, clinical_route, preferred_facility_id=preferred_facility_id)
+    candidates = await rank_eligible_facilities(session, patient_latitude, patient_longitude, clinical_route, preferred_facility_id=preferred_facility_id, patient_country_code=patient_country_code, max_distance_km=max_distance_km)
     selected = min((item for item in candidates if item.eligible), key=lambda item: (item.rank or 999999, str(item.tenant.id)), default=None)
     if not selected or selected.distance_km is None:
         return None

@@ -22,6 +22,7 @@ from app.services.facility_routing import rank_eligible_facilities, select_neare
 from app.services.registry_service import ensure_facility_registry, ensure_patient_registry, ensure_provider_registry, issue_health_card_credential, patient_duplicate_key
 from app.services.supabase_auth import password_login, provision_user, SupabaseAuthError
 from app.services.facility_verification import review_due_at
+from app.services.country_policies import country_policy, radius_for_urgency
 
 router = APIRouter(prefix="/api/v1")
 
@@ -341,7 +342,7 @@ def _build_profile(account: AuthAccount) -> AuthProfileResponse:
     title = "Dr. " if account.role == "specialist" else ""
     return AuthProfileResponse(
         id=str(account.id), role=account.role, tenant_id=str(account.tenant_id), phone=account.phone,
-        email=account.email, first_name=account.first_name, last_name=account.last_name,
+        email=account.email, first_name=account.first_name, last_name=account.last_name, country_code=account.country_code,
         full_name=f"{title}{account.first_name} {account.last_name}", specialty=account.specialty,
         card_number=account.card_number, subtitle=f"{account.role.title()} portal",
         date_of_birth=account.date_of_birth, gender=account.gender, state=account.state, lga=account.lga,
@@ -1255,6 +1256,12 @@ def _signup_reference() -> str:
     return f"SV-APP-{datetime.now(UTC):%Y%m%d}-{secrets.token_hex(4).upper()}"
 
 
+def country_code_for_name(value: str | None) -> str:
+    raw = str(value or "").strip().casefold()
+    aliases = {"nigeria": "NG", "ghana": "GH", "kenya": "KE", "south africa": "ZA", "united kingdom": "GB", "united states": "US", "us": "US", "ng": "NG", "gb": "GB"}
+    return aliases.get(raw, raw.upper() if len(raw) == 2 and raw.isalpha() else "")
+
+
 async def _validated_invitation(session: AsyncSession, role: str, raw_token: str | None, email: str | None) -> StaffInvitation | None:
     if not raw_token:
         return None
@@ -1363,7 +1370,7 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
         duplicate_key = patient_duplicate_key(data.get("first_name", ""), data.get("last_name", ""), date_of_birth)
         if await session.scalar(select(PatientRegistry).where(PatientRegistry.duplicate_key == duplicate_key).limit(1)):
             raise HTTPException(status_code=409, detail="A matching patient identity already exists and requires duplicate review")
-        account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
+        account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, country_code=country_code_for_name(application.country) or "NG", date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
         session.add(account)
         await session.flush()
         if settings.supabase_auth_enabled:
@@ -2667,8 +2674,9 @@ async def patient_queue(request: Request, session: AsyncSession = Depends(get_db
         "queue_status": patient_ticket.queue_status,
     }
 
-async def persist_routing_decision(session: AsyncSession, ticket: TicketResponse, clinical_route: Any, candidates: tuple[Any, ...], selected_facility_id: uuid.UUID | None, preferred_facility_id: uuid.UUID | None, reason: str) -> RoutingDecision:
-    decision = RoutingDecision(ticket_id=ticket.id, patient_owner_tenant_id=ticket.tenant_id, selected_facility_id=selected_facility_id, required_service=str(clinical_route.target_specialty), required_specialty=str(clinical_route.target_specialty), urgency=str(clinical_route.derived_urgency), status="SELECTED" if selected_facility_id else "NO_SUITABLE_FACILITY", selection_reason=reason, patient_preference_facility_id=preferred_facility_id)
+async def persist_routing_decision(session: AsyncSession, ticket: TicketResponse, clinical_route: Any, candidates: tuple[Any, ...], selected_facility_id: uuid.UUID | None, preferred_facility_id: uuid.UUID | None, reason: str, *, patient_country_code: str | None = None, route_distance_km: float | None = None) -> RoutingDecision:
+    selected_country = next((str(item.registry.country).upper() for item in candidates if item.tenant.id == selected_facility_id), None)
+    decision = RoutingDecision(ticket_id=ticket.id, patient_owner_tenant_id=ticket.tenant_id, selected_facility_id=selected_facility_id, required_service=str(clinical_route.target_specialty), required_specialty=str(clinical_route.target_specialty), urgency=str(clinical_route.derived_urgency), status="SELECTED" if selected_facility_id else "NO_SUITABLE_FACILITY", selection_reason=reason, patient_preference_facility_id=preferred_facility_id, patient_country_code=patient_country_code, selected_hospital_country_code=selected_country, cross_border=bool(selected_country and patient_country_code and selected_country != patient_country_code), eligibility_reasons=json.dumps([r for item in candidates if item.eligible for r in item.reasons]), rejected_candidates=json.dumps([{"facility_id": str(item.tenant.id), "reasons": item.reasons} for item in candidates if not item.eligible]), route_distance_km=route_distance_km)
     session.add(decision)
     await session.flush()
     session.add_all([RoutingCandidate(routing_decision_id=decision.id, facility_id=item.tenant.id, rank=item.rank, eligible=item.eligible, distance_km=item.distance_km, suitability_score=item.suitability_score, has_required_capability=item.has_required_capability, has_emergency_capability=item.has_emergency_capability, has_staff_coverage=item.has_staff_coverage, has_capacity=item.has_capacity, reasons_json=json.dumps(item.reasons)) for item in candidates])
@@ -2686,20 +2694,34 @@ async def patient_triage(request: Request, session: AsyncSession = Depends(get_d
     if len(symptom_text) < 3:
         raise HTTPException(status_code=422, detail="Describe the symptoms in a little more detail")
     latitude, longitude = patient_coordinates_from_payload(payload)
+    country_code = str(payload.get("current_country_code") or payload.get("country_code") or "").strip().upper()
+    if len(country_code) != 2 or not country_code.isalpha():
+        raise HTTPException(status_code=422, detail="Current country code is required for safe local routing")
+    max_distance = payload.get("service_radius_km")
+    try:
+        max_distance = float(max_distance) if max_distance not in (None, "") else None
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=422, detail="Service radius must be a valid number of kilometres")
     preferred_id = None
     if payload.get("preferred_facility_id"):
         try: preferred_id = uuid.UUID(str(payload["preferred_facility_id"]))
         except ValueError: raise HTTPException(status_code=422, detail="Preferred facility identifier is invalid")
     clinical_route = await request.app.state.knowledge_graph.route(symptom_text)
-    candidates = await rank_eligible_facilities(session, latitude, longitude, clinical_route, preferred_facility_id=preferred_id)
-    route = await select_nearest_eligible_hospital(session, latitude, longitude, clinical_route, preferred_facility_id=preferred_id)
+    policy_radius = radius_for_urgency(country_code, str(clinical_route.derived_urgency))
+    if policy_radius is None:
+        raise HTTPException(status_code=422, detail="This country is not enabled for automated routing yet")
+    max_distance = min(max_distance, policy_radius) if max_distance is not None else policy_radius
+    candidates = await rank_eligible_facilities(session, latitude, longitude, clinical_route, preferred_facility_id=preferred_id, patient_country_code=country_code, max_distance_km=max_distance)
+    route = await select_nearest_eligible_hospital(session, latitude, longitude, clinical_route, preferred_facility_id=preferred_id, patient_country_code=country_code, max_distance_km=max_distance)
     ticket = await persist_ticket(TicketCreate(customer_phone=account.phone or "", raw_intake_text=symptom_text, channel="WEB"), request, session, clinical_route, account.tenant_id, route.tenant.id if route else None, latitude, longitude, route.distance_km if route else None, route_attempted=True)
     if not route:
         reason = "No registered facility met the clinical capability, staffing, emergency, capacity, and intake requirements"
-        await persist_routing_decision(session, ticket, clinical_route, candidates, None, preferred_id, reason)
-        message = "No suitable registered facility is available. Seek immediate local emergency care." if clinical_route.derived_urgency == "CRITICAL" else "No suitable registered facility is available. A care coordinator must review this ticket."
-        raise HTTPException(status_code=503, detail={"code": "NO_SUITABLE_FACILITY", "message": message, "ticket_id": str(ticket.id), "urgency": clinical_route.derived_urgency})
-    await persist_routing_decision(session, ticket, clinical_route, candidates, route.tenant.id, preferred_id, route.match_basis)
+        await persist_routing_decision(session, ticket, clinical_route, candidates, None, preferred_id, reason, patient_country_code=country_code)
+        policy = country_policy(country_code)
+        emergency_message = f"For emergencies, contact local emergency services at {policy.emergency_number}." if policy else "Contact your local emergency services immediately if this is an emergency."
+        message = f"No eligible SynaptiVerse hospital is currently available in your country. {emergency_message if clinical_route.derived_urgency == 'CRITICAL' else 'You can request telemedicine or local-directory assistance.'}"
+        raise HTTPException(status_code=503, detail={"code": "NO_LOCAL_FACILITY", "message": message, "country_code": country_code, "cross_border": False, "ticket_id": str(ticket.id), "urgency": clinical_route.derived_urgency})
+    await persist_routing_decision(session, ticket, clinical_route, candidates, route.tenant.id, preferred_id, route.match_basis, patient_country_code=country_code, route_distance_km=route.distance_km)
     slot_payload = None
     if route.slot and route.provider:
         slot_payload = {"slot_id": str(route.slot.id), "slot_start": route.slot.starts_at.isoformat(), "slot_end": route.slot.ends_at.isoformat(), "specialist_name": route.provider.full_name, "specialty": route.provider.specialty, "room_label": route.provider.room_label}
