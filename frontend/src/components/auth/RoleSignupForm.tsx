@@ -22,6 +22,8 @@ const countryData: Record<string, { code: string; states: string[] }> = {
   'United States': { code: '+1', states: ['Alabama', 'California', 'Florida', 'Georgia', 'Illinois', 'New York', 'Texas', 'Washington'] },
 };
 
+const countryDialingCodes = Object.values(countryData).map(({ code }) => code).sort((left, right) => right.length - left.length);
+
 const topLevelFields = new Set(['first_name', 'middle_name', 'last_name', 'full_name', 'phone', 'email', 'country', 'region', 'password', 'confirm_password', 'invitation_token']);
 const coordinateFields = new Set(['latitude', 'longitude']);
 
@@ -140,11 +142,11 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
     if (name === 'country') {
       const nextCountry = countryData[value];
       setValues((current) => {
-        const oldCode = countryData[current.country]?.code ?? '';
         const currentPhone = (current.phone ?? '').trim();
         let phone = nextCountry?.code ?? '';
-        if (currentPhone && oldCode && currentPhone.startsWith(oldCode)) {
-          phone = `${nextCountry?.code ?? ''}${currentPhone.slice(oldCode.length)}`;
+        const existingCode = countryDialingCodes.find((code) => currentPhone.startsWith(code));
+        if (currentPhone && existingCode) {
+          phone = `${nextCountry?.code ?? ''}${currentPhone.slice(existingCode.length)}`;
         } else if (currentPhone && current.country === value) {
           phone = currentPhone;
         }
