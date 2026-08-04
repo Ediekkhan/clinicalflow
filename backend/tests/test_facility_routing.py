@@ -105,7 +105,7 @@ def test_patient_triage_persists_destination_and_enforces_ticket_visibility() ->
         assert client.post("/api/v1/auth/patient/login", json={"phone": PATIENT_PHONE, "password": PASSWORD}).status_code == 200
         response = client.post(
             "/api/v1/patient/triage",
-            json={"symptom_description": "I have fever and weakness", "latitude": fixture["patient_latitude"], "longitude": fixture["patient_longitude"]},
+            json={"symptom_description": "I have fever and weakness", "current_country_code": "NG", "latitude": fixture["patient_latitude"], "longitude": fixture["patient_longitude"]},
         )
         patient_tickets = client.get("/api/v1/tickets")
 
