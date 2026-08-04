@@ -364,6 +364,13 @@ def _set_role_cookie(response: Response, role: str) -> None:
 
 async def _login_account(account: AuthAccount, request: Request, response: Response, session: AsyncSession) -> AuthSessionResponse:
     issued = await create_session(session, account, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"))
+    memberships = list((await session.execute(select(StaffMembership).where(
+        StaffMembership.user_id == account.id,
+        StaffMembership.is_active.is_(True),
+        StaffMembership.employment_status == "ACTIVE",
+    ).order_by(StaffMembership.active_from.desc()))).scalars().all())
+    if memberships and len({membership.hospital_id for membership in memberships}) == 1:
+        issued.session.selected_membership_id = memberships[0].id
     await session.commit()
     _set_session_cookies(response, issued.access_token, issued.refresh_token)
     _set_role_cookie(response, account.role)
@@ -425,7 +432,7 @@ async def triage_websocket(websocket: WebSocket) -> None:
 @router.post("/auth/{role}/login", response_model=AuthSessionResponse)
 async def login(role: str, payload: AuthLoginRequest, request: Request, response: Response, session: AsyncSession = Depends(get_db)) -> AuthSessionResponse:
     await enforce_rate_limit(request, "auth-login", settings.auth_rate_limit)
-    if role not in {"patient", "doctor", "specialist", "nurse", "department_coordinator", "hospital_admin"}:
+    if role not in {"patient", "doctor", "specialist", "nurse", "department_coordinator", "hospital_admin", "pharmacy", "laboratory", "hmo", "government"}:
         raise HTTPException(status_code=404, detail="Authentication route not found")
     identifier = (payload.phone or payload.email or "").strip().lower()
     if not identifier or not payload.password:
@@ -433,7 +440,11 @@ async def login(role: str, payload: AuthLoginRequest, request: Request, response
     if role == "patient":
         account = await find_account(session, role, identifier, uuid.UUID(settings.default_tenant_id))
     else:
-        account = await session.scalar(select(AuthAccount).where(AuthAccount.role == role, func.lower(AuthAccount.identifier) == identifier, AuthAccount.is_active.is_(True)))
+        account = await session.scalar(select(AuthAccount).where(
+            AuthAccount.role == role,
+            or_(func.lower(AuthAccount.identifier) == identifier, func.lower(AuthAccount.email) == identifier),
+            AuthAccount.is_active.is_(True),
+        ))
     # Supabase Auth is the password authority when configured. The linked
     # application account still supplies role, membership, and tenant scope.
     if settings.supabase_auth_enabled:
@@ -1017,7 +1028,7 @@ async def channel_intake(
         .where(
             Ticket.tenant_id == tenant_id,
             Ticket.customer_phone == payload.customer_phone,
-            Ticket.queue_status.in_(["QUEUED", "BEING_SEEN"]),
+            Ticket.queue_status.notin_(["REJECTED", "DISCHARGED", "TRANSFERRED", "CANCELLED", "RESOLVED"]),
         )
         .order_by(Ticket.created_at.desc())
     )
@@ -1056,6 +1067,8 @@ async def channel_intake(
         )
 
     if payload.intent == "BOOK_APPOINTMENT":
+        if not active_ticket:
+            raise HTTPException(status_code=404, detail="No active visit for this phone")
         slot_rows = (await session.execute(
             select(ProviderSlot, Provider)
             .join(Provider, Provider.id == ProviderSlot.provider_id)
@@ -1645,7 +1658,8 @@ async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depen
 @router.get("/auth/facility-admin/activation/{activation_token}")
 async def inspect_facility_admin_activation(activation_token: str, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     activation = await session.scalar(select(FacilityAdminActivation).where(FacilityAdminActivation.token_hash == token_hash(activation_token)))
-    if not activation or activation.status != "PENDING" or activation.expires_at <= utc_now() or activation.revoked_at is not None:
+    expires_at = activation.expires_at.replace(tzinfo=UTC) if activation and activation.expires_at.tzinfo is None else activation.expires_at if activation else None
+    if not activation or activation.status != "PENDING" or not expires_at or expires_at <= utc_now() or activation.revoked_at is not None:
         raise HTTPException(status_code=400, detail="Activation link is invalid or expired")
     account = await session.get(AuthAccount, activation.account_id)
     return {"valid": True, "email": account.email if account else None, "expires_at": activation.expires_at}
@@ -1658,7 +1672,8 @@ async def activate_facility_admin(request: Request, session: AsyncSession = Depe
     if not raw_token or not payload.get("password") or not payload.get("mfa_setup") or not payload.get("terms_accepted"):
         raise HTTPException(status_code=422, detail="Activation requires a token, new password, MFA setup, and terms acceptance")
     activation = await session.scalar(select(FacilityAdminActivation).where(FacilityAdminActivation.token_hash == token_hash(raw_token)).with_for_update())
-    if not activation or activation.status != "PENDING" or activation.expires_at <= utc_now() or activation.revoked_at is not None:
+    expires_at = activation.expires_at.replace(tzinfo=UTC) if activation and activation.expires_at.tzinfo is None else activation.expires_at if activation else None
+    if not activation or activation.status != "PENDING" or not expires_at or expires_at <= utc_now() or activation.revoked_at is not None:
         raise HTTPException(status_code=400, detail="Activation link is invalid or expired")
     account = await session.get(AuthAccount, activation.account_id, with_for_update=True)
     if not account:
@@ -1749,7 +1764,7 @@ async def resubmit_verification(case_id: uuid.UUID, request: Request, session: A
 
 @router.get("/platform/signup-applications")
 async def list_signup_applications(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    await require_facility_reviewer(request, session)
+    await require_roles(request, session, FACILITY_VERIFIER_ROLES | {"admin"})
     rows = (await session.execute(
         select(SignupApplication, OrganizationApplication, FacilityVerificationCase)
         .join(OrganizationApplication, OrganizationApplication.signup_application_id == SignupApplication.id)
@@ -1778,7 +1793,9 @@ async def require_facility_reviewer(request: Request, session: AsyncSession, *, 
 
 @router.get("/platform/facility-verifications")
 async def list_facility_verifications(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    reviewer = await require_facility_reviewer(request, session)
+    # Platform administrators may monitor the queue, but only dedicated
+    # verification roles may assign, approve, reject, or request information.
+    reviewer = await require_roles(request, session, FACILITY_VERIFIER_ROLES | {"admin"})
     statement = select(FacilityVerificationCase, SignupApplication, OrganizationApplication).join(SignupApplication, SignupApplication.id == FacilityVerificationCase.signup_application_id).join(OrganizationApplication, OrganizationApplication.id == FacilityVerificationCase.organization_application_id)
     if reviewer.role == "facility_verifier":
         statement = statement.where(or_(FacilityVerificationCase.assigned_reviewer_id == reviewer.id, FacilityVerificationCase.assigned_reviewer_id.is_(None)))
@@ -1871,7 +1888,10 @@ async def review_signup_application(application_id: uuid.UUID, request: Request,
     session.add(department)
     name_parts = str(data.get("administrator_name") or data.get("full_name") or "Facility Administrator").strip().split(maxsplit=1)
     admin_role = "hospital_admin" if application.application_type in {"hospital", "clinic"} else "admin"
-    admin = AuthAccount(tenant_id=tenant.id, role=admin_role, identifier=admin_email, password_hash=None, first_name=name_parts[0], last_name=name_parts[1] if len(name_parts) > 1 else "", email=admin_email, is_active=False)
+    # The activation link, not an application-supplied password, is the only
+    # way to set the initial credential. Persist a random unusable value until
+    # activation because the account schema intentionally disallows NULL hashes.
+    admin = AuthAccount(tenant_id=tenant.id, role=admin_role, identifier=admin_email, password_hash=hash_password(secrets.token_urlsafe(48)), first_name=name_parts[0], last_name=name_parts[1] if len(name_parts) > 1 else "", email=admin_email, is_active=False)
     session.add(admin)
     await session.flush()
     membership = StaffMembership(user_id=admin.id, hospital_id=tenant.id, department_id=department.name, department_ref_id=department.id, role=admin_role, verification_status="ACTIVATION_PENDING", employment_status="PENDING", is_active=False, is_on_duty=False, active_from=utc_now())
@@ -3056,7 +3076,7 @@ SPECIALIST_RESOURCES = {"dashboard", "queue", "patients", "appointments", "sched
 
 async def require_specialist(request: Request, session: AsyncSession) -> AuthAccount:
     account = await require_account(request, session)
-    if account.role != "specialist":
+    if account.role not in {"doctor", "specialist"}:
         raise HTTPException(status_code=403, detail="Specialist access required")
     return account
 
@@ -3227,7 +3247,14 @@ async def operational_portal(entity: str, resource: str, request: Request, sessi
     sector_entities = {"pharmacy", "lab", "hmo", "moh", "admin"}
     if entity not in operational_entities | sector_entities or resource not in OPERATIONAL_RESOURCES:
         raise HTTPException(status_code=404, detail="Operational resource not found")
-    allowed_roles = {"admin"} if entity in sector_entities else {"nurse", "doctor", "hospital_admin", "admin"}
+    role_map = {
+        "pharmacy": {"pharmacy", "pharmacist", "admin"},
+        "lab": {"laboratory", "lab_scientist", "lab_technician", "admin"},
+        "hmo": {"hmo", "payer", "admin"},
+        "moh": {"government", "moh", "admin"},
+        "admin": {"admin"},
+    }
+    allowed_roles = role_map.get(entity, {"nurse", "doctor", "hospital_admin", "admin"})
     account = await require_roles(request, session, allowed_roles)
     tenant = await session.get(Tenant, account.tenant_id)
     tickets = list((await session.execute(
