@@ -137,10 +137,21 @@ export function RoleSignupForm({ config }: { config: SignupConfig }) {
   }, [coords, isFacilityLocationStep]);
 
   function update(name: string, value: string) {
-    setValues((current) => ({ ...current, [name]: value }));
     if (name === 'country') {
       const nextCountry = countryData[value];
-      setValues((current) => ({ ...current, country: value, region: '', phone: current.phone?.trim() ? current.phone : (nextCountry?.code ?? '') }));
+      setValues((current) => {
+        const oldCode = countryData[current.country]?.code ?? '';
+        const currentPhone = (current.phone ?? '').trim();
+        let phone = nextCountry?.code ?? '';
+        if (currentPhone && oldCode && currentPhone.startsWith(oldCode)) {
+          phone = `${nextCountry?.code ?? ''}${currentPhone.slice(oldCode.length)}`;
+        } else if (currentPhone && current.country === value) {
+          phone = currentPhone;
+        }
+        return { ...current, country: value, region: '', phone };
+      });
+    } else {
+      setValues((current) => ({ ...current, [name]: value }));
     }
     if (name === 'invitation_token') setInvitationContext(null);
     setErrors((current) => ({ ...current, [name]: '' }));
