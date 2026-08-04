@@ -14,8 +14,8 @@ from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Appointment, ApplicationReviewHistory, AppointmentAssignmentRequest, AuthAccount, AuthSession, AuditLog, BreakGlassGrant, CareTeamAssignment, ClinicalPrivilege, ClientMutation, ConsentRecord, ConsultationNote, DemoRequest, EnterpriseEnquiry, ExternalRegistryCheck, FacilityAcceptance, FacilityAdminActivation, FacilityRegistry, FacilityService, FacilityVerificationCase, HealthCardCredential, HospitalDepartment, HospitalDoctorMembership, LaboratoryOrder, DiagnosticReport, Notification, NotificationDelivery, OperationalRecord, OrganizationApplication, OrganizationOnboardingDraft, OutboxEvent, PatientConsentDirective, PatientFacilityIdentity, PatientRegistry, PaymentWebhookEvent, ProfessionalCredential, ProvenanceRecord, ProviderAvailability, ProviderRegistry, RoutingCandidate, RoutingDecision, SignupApplication, Specialty, StaffInvitation, StaffMembership, Provider, ProviderSlot, SpecialistMessage, TerminologyRelease, Ticket, Tenant, VerificationDocument, VerificationEvent, VerificationFinding
-from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, EnterpriseEnquiryCreate, EnterpriseEnquiryUpdate, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, SignupApplicationCreate, SignupApplicationResponse, SignupInvitationValidateRequest, SignupVerificationRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
+from app.models import Appointment, ApplicationReviewHistory, AppointmentAssignmentRequest, AuthAccount, AuthSession, AuditLog, BillingCustomer, BreakGlassGrant, CareTeamAssignment, CheckoutSession, ClinicalPrivilege, ClientMutation, ConsentRecord, ConsultationNote, DemoRequest, EnterpriseEnquiry, ExternalRegistryCheck, FacilityAcceptance, FacilityAdminActivation, FacilityRegistry, FacilityService, FacilityVerificationCase, HealthCardCredential, HospitalDepartment, HospitalDoctorMembership, Invoice, LaboratoryOrder, DiagnosticReport, Notification, NotificationDelivery, OperationalRecord, OrganizationApplication, OrganizationOnboardingDraft, OutboxEvent, PatientConsentDirective, PatientFacilityIdentity, PatientRegistry, PaymentAttempt, PaymentWebhookEvent, ProfessionalCredential, ProvenanceRecord, ProviderAvailability, ProviderRegistry, ReconciliationIssue, RefundRecord, RoutingCandidate, RoutingDecision, SignupApplication, Specialty, StaffInvitation, StaffMembership, Subscription, TerminologyRelease, Ticket, Tenant, VerificationDocument, VerificationEvent, VerificationFinding
+from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, EnterpriseEnquiryCreate, EnterpriseEnquiryUpdate, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, RefundCreate, ReconciliationResolve, SignupApplicationCreate, SignupApplicationResponse, SignupInvitationValidateRequest, SignupVerificationRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
 from app.services.audit_service import AuditAction, write_audit_log
 from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, hash_password, session_for_refresh_token, token_hash, utc_now, verify_password
 from app.services.channel_service import SMS_TEMPLATES, intent_from_text, normalize_webhook, valid_signature
@@ -25,6 +25,7 @@ from app.services.supabase_auth import password_login, provision_user, SupabaseA
 from app.services.facility_verification import review_due_at
 from app.services.country_policies import country_policy, radius_for_urgency
 from app.services.payment_providers import provider_for_country
+from app.services.storage_service import delete_object, object_metadata, private_object_key, signed_download_url, signed_upload_url, validate_document, StorageNotConfigured
 
 router = APIRouter(prefix="/api/v1")
 
@@ -2073,8 +2074,252 @@ async def payment_webhook(provider: str, request: Request, session: AsyncSession
         return {"status": "already_processed"}
     event = PaymentWebhookEvent(provider=provider_code, provider_event_id=event_id, event_type=str(payload.get("type") or payload.get("event") or "unknown"), payload_hash=hashlib.sha256(body).hexdigest(), processing_status="PROCESSED", processed_at=utc_now())
     session.add(event)
+    event_name = str(payload.get("type") or payload.get("event") or "").lower()
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    data_object = data.get("object") if isinstance(data.get("object"), dict) else data
+    provider_reference = str(data_object.get("id") or data_object.get("reference") or data_object.get("session_id") or "")
+    checkout = await session.scalar(select(CheckoutSession).where(CheckoutSession.provider == provider_code, CheckoutSession.provider_reference == provider_reference).with_for_update()) if provider_reference else None
+    if checkout:
+        if any(token in event_name for token in ("completed", "success", "paid", "charge.success")):
+            checkout.status = "COMPLETED"
+            checkout.completed_at = utc_now()
+        elif any(token in event_name for token in ("failed", "failure", "declined")):
+            checkout.status = "FAILED"
+        if event_name in {"checkout.session.completed", "charge.success", "payment.success"}:
+            session.add(PaymentAttempt(checkout_session_id=checkout.id, provider_transaction_reference=provider_reference, amount_minor=checkout.amount_minor, currency=checkout.currency, status="SUCCEEDED"))
+            session.add(OutboxEvent(tenant_id=checkout.organization_id, aggregate_type="CheckoutSession", aggregate_id=checkout.id, event_type="PAYMENT_SUCCEEDED", payload_json=json.dumps({"checkout_reference": checkout.public_reference}), classification="RESTRICTED"))
     await session.commit()
     return {"status": "accepted"}
+
+
+@router.post("/billing/payments/{payment_id}/refunds")
+async def request_refund(payment_id: str, payload: RefundCreate, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    try:
+        payment_uuid = uuid.UUID(payment_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid payment ID") from error
+    payment = await session.scalar(select(PaymentAttempt).join(CheckoutSession, CheckoutSession.id == PaymentAttempt.checkout_session_id).where(PaymentAttempt.id == payment_uuid, CheckoutSession.organization_id == account.tenant_id).with_for_update())
+    if not payment or payment.status != "SUCCEEDED":
+        raise HTTPException(status_code=404, detail="Refundable payment not found")
+    idempotency_key = request.headers.get("x-idempotency-key")
+    if idempotency_key:
+        existing = await session.scalar(select(RefundRecord).where(RefundRecord.idempotency_key == idempotency_key))
+        if existing:
+            return {"refund_id": str(existing.id), "status": existing.status}
+    refunds = list((await session.scalars(select(RefundRecord).where(RefundRecord.payment_attempt_id == payment.id, RefundRecord.status.not_in({"FAILED", "CANCELLED"})))).all())
+    refundable = payment.amount_minor - sum(item.amount_minor for item in refunds)
+    amount = payload.amount_minor or refundable
+    if amount > refundable:
+        raise HTTPException(status_code=422, detail="Refund exceeds refundable balance")
+    refund = RefundRecord(payment_attempt_id=payment.id, amount_minor=amount, currency=payment.currency, reason=payload.reason, requested_by_id=account.id, idempotency_key=idempotency_key)
+    session.add(refund)
+    await session.commit()
+    return {"refund_id": str(refund.id), "status": refund.status, "amount_minor": refund.amount_minor}
+
+
+@router.post("/billing/refunds/{refund_id}/approve")
+async def approve_refund(refund_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    try:
+        refund_uuid = uuid.UUID(refund_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid refund ID") from error
+    refund = await session.scalar(select(RefundRecord).join(PaymentAttempt).join(CheckoutSession, CheckoutSession.id == PaymentAttempt.checkout_session_id).where(RefundRecord.id == refund_uuid, CheckoutSession.organization_id == account.tenant_id).with_for_update())
+    if not refund or refund.status != "REQUESTED":
+        raise HTTPException(status_code=409, detail="Refund is not awaiting approval")
+    refund.authorized_by_id = account.id
+    refund.status = "APPROVED"
+    await session.commit()
+    return {"refund_id": str(refund.id), "status": refund.status}
+
+
+@router.post("/billing/refunds/{refund_id}/submit")
+async def submit_refund(refund_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    try:
+        refund_uuid = uuid.UUID(refund_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid refund ID") from error
+    refund = await session.scalar(select(RefundRecord).join(PaymentAttempt).join(CheckoutSession, CheckoutSession.id == PaymentAttempt.checkout_session_id).where(RefundRecord.id == refund_uuid, CheckoutSession.organization_id == account.tenant_id).with_for_update())
+    if not refund or refund.status != "APPROVED":
+        raise HTTPException(status_code=409, detail="Refund must be approved before submission")
+    refund.status = "SUBMITTED"
+    await session.commit()
+    return {"refund_id": str(refund.id), "status": refund.status, "message": "Submitted for provider processing"}
+
+
+@router.get("/billing/refunds")
+async def list_refunds(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    rows = (await session.execute(select(RefundRecord).join(PaymentAttempt).join(CheckoutSession, CheckoutSession.id == PaymentAttempt.checkout_session_id).where(CheckoutSession.organization_id == account.tenant_id).order_by(RefundRecord.requested_at.desc()))).scalars().all()
+    return {"items": [{"id": str(row.id), "amount_minor": row.amount_minor, "currency": row.currency, "status": row.status, "reason": row.reason, "requested_at": row.requested_at.isoformat()} for row in rows]}
+
+
+@router.get("/billing/refunds/{refund_id}")
+async def get_refund(refund_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    try:
+        refund_uuid = uuid.UUID(refund_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid refund ID") from error
+    row = await session.scalar(select(RefundRecord).join(PaymentAttempt).join(CheckoutSession, CheckoutSession.id == PaymentAttempt.checkout_session_id).where(RefundRecord.id == refund_uuid, CheckoutSession.organization_id == account.tenant_id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Refund not found")
+    return {"id": str(row.id), "status": row.status, "amount_minor": row.amount_minor, "currency": row.currency, "reason": row.reason, "requested_by_id": str(row.requested_by_id) if row.requested_by_id else None, "authorized_by_id": str(row.authorized_by_id) if row.authorized_by_id else None}
+
+
+@router.post("/billing/reconciliation/run")
+async def run_reconciliation(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    pending = await session.scalar(select(func.count(PaymentAttempt.id)).join(CheckoutSession, CheckoutSession.id == PaymentAttempt.checkout_session_id).where(CheckoutSession.organization_id == account.tenant_id, PaymentAttempt.status == "PENDING"))
+    return {"status": "queued", "pending_attempts": int(pending or 0)}
+
+
+@router.get("/billing/reconciliation/issues")
+async def list_reconciliation_issues(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    rows = (await session.scalars(select(ReconciliationIssue).where(ReconciliationIssue.tenant_id == account.tenant_id).order_by(ReconciliationIssue.created_at.desc()))).all()
+    return {"items": [{"id": str(row.id), "provider": row.provider, "provider_reference": row.provider_reference, "status": row.status, "local_status": row.local_status, "provider_status": row.provider_status} for row in rows]}
+
+
+@router.post("/billing/reconciliation/issues/{issue_id}/resolve")
+async def resolve_reconciliation_issue(issue_id: str, payload: ReconciliationResolve, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    try:
+        issue_uuid = uuid.UUID(issue_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid reconciliation issue ID") from error
+    row = await session.scalar(select(ReconciliationIssue).where(ReconciliationIssue.id == issue_uuid, ReconciliationIssue.tenant_id == account.tenant_id).with_for_update())
+    if not row or row.status != "OPEN":
+        raise HTTPException(status_code=409, detail="Reconciliation issue is not open")
+    row.status = "RESOLVED"
+    row.resolution = payload.resolution
+    row.resolved_by_id = account.id
+    row.resolved_at = utc_now()
+    await session.commit()
+    return {"id": str(row.id), "status": row.status}
+
+
+async def _verification_document_access(request: Request, session: AsyncSession, document_id: str) -> tuple[AuthAccount, VerificationDocument]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    try:
+        identifier = uuid.UUID(document_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail="Invalid document ID") from error
+    document = await session.scalar(select(VerificationDocument).join(SignupApplication, SignupApplication.id == VerificationDocument.signup_application_id).where(VerificationDocument.id == identifier, SignupApplication.account_id == account.id if account.role != "admin" else True))
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return account, document
+
+
+@router.post("/documents/upload-url")
+async def document_upload_url(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    payload = await request.json()
+    try:
+        application_id = uuid.UUID(str(payload.get("application_id")))
+        filename = str(payload.get("filename") or "")
+        content_type = str(payload.get("content_type") or "")
+        size_bytes = int(payload.get("size_bytes") or 0)
+        validate_document(filename=filename, content_type=content_type, size_bytes=size_bytes)
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=422, detail="Invalid verification document") from error
+    application = await session.scalar(select(SignupApplication).where(SignupApplication.id == application_id, SignupApplication.account_id == account.id if account.role != "admin" else True))
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+    key = private_object_key(tenant_id=str(account.tenant_id), application_id=str(application_id), filename=filename)
+    try:
+        url = signed_upload_url(object_key=key, content_type=content_type)
+    except StorageNotConfigured as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    document = VerificationDocument(signup_application_id=application_id, document_type=str(payload.get("document_type") or "OTHER"), private_storage_key=key, original_name=filename, content_type=content_type, size_bytes=size_bytes, verification_status="UPLOAD_PENDING")
+    session.add(document)
+    await session.flush()
+    await write_audit_log(session, AuditAction.DOCUMENT_UPLOADED, actor_id=str(account.id), actor_type="STAFF", tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "0.0.0.0", resource_type="VerificationDocument", resource_id=str(document.id), metadata={"phase": "URL_ISSUED"})
+    await session.commit()
+    return {"document_id": str(document.id), "upload_url": url, "expires_in": settings.signed_url_ttl_seconds}
+
+
+@router.post("/documents/confirm")
+async def confirm_document_upload(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account, document = await _verification_document_access(request, session, str((await request.json()).get("document_id")))
+    try:
+        metadata = object_metadata(object_key=document.private_storage_key)
+    except Exception as error:
+        raise HTTPException(status_code=422, detail="Uploaded object could not be verified") from error
+    if metadata["size_bytes"] != document.size_bytes or metadata["content_type"] != document.content_type:
+        raise HTTPException(status_code=422, detail="Uploaded object metadata does not match the declaration")
+    document.verification_status = "PENDING_VERIFICATION"
+    await write_audit_log(session, AuditAction.DOCUMENT_UPLOADED, actor_id=str(account.id), actor_type="STAFF", tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "0.0.0.0", resource_type="VerificationDocument", resource_id=str(document.id), metadata={"phase": "CONFIRMED"})
+    await session.commit()
+    return {"document_id": str(document.id), "status": document.verification_status}
+
+
+@router.get("/documents/{document_id}/download-url")
+async def document_download_url(document_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account, document = await _verification_document_access(request, session, document_id)
+    try:
+        url = signed_download_url(object_key=document.private_storage_key)
+    except StorageNotConfigured as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    await write_audit_log(session, AuditAction.DOCUMENT_DOWNLOADED, actor_id=str(account.id), actor_type="STAFF", tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "0.0.0.0", resource_type="VerificationDocument", resource_id=str(document.id))
+    await session.commit()
+    return {"download_url": url, "expires_in": settings.signed_url_ttl_seconds}
+
+
+@router.get("/documents/{document_id}")
+async def get_verification_document(document_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    _, document = await _verification_document_access(request, session, document_id)
+    return {
+        "id": str(document.id),
+        "application_id": str(document.signup_application_id),
+        "document_type": document.document_type,
+        "original_name": document.original_name,
+        "content_type": document.content_type,
+        "size_bytes": document.size_bytes,
+        "checksum_sha256": document.checksum_sha256,
+        "verification_status": document.verification_status,
+        "created_at": document.created_at.isoformat(),
+    }
+
+
+@router.post("/documents/{document_id}/replace")
+async def replace_verification_document(document_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account, previous = await _verification_document_access(request, session, document_id)
+    payload = await request.json()
+    try:
+        filename = str(payload.get("filename") or "")
+        content_type = str(payload.get("content_type") or "")
+        size_bytes = int(payload.get("size_bytes") or 0)
+        validate_document(filename=filename, content_type=content_type, size_bytes=size_bytes)
+    except (ValueError, TypeError) as error:
+        raise HTTPException(status_code=422, detail="Invalid replacement document") from error
+    key = private_object_key(tenant_id=str(account.tenant_id), application_id=str(previous.signup_application_id), filename=filename)
+    try:
+        url = signed_upload_url(object_key=key, content_type=content_type)
+    except StorageNotConfigured as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    replacement = VerificationDocument(signup_application_id=previous.signup_application_id, document_type=previous.document_type, private_storage_key=key, original_name=filename, content_type=content_type, size_bytes=size_bytes, replaced_by_id=previous.id, verification_status="UPLOAD_PENDING")
+    previous.verification_status = "REPLACED"
+    session.add(replacement)
+    await session.flush()
+    await write_audit_log(session, AuditAction.DOCUMENT_REPLACED, actor_id=str(account.id), actor_type="STAFF", tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "0.0.0.0", resource_type="VerificationDocument", resource_id=str(replacement.id), metadata={"replaced_document_id": str(previous.id)})
+    await session.commit()
+    return {"document_id": str(replacement.id), "replaced_document_id": str(previous.id), "upload_url": url, "expires_in": settings.signed_url_ttl_seconds}
+
+
+@router.delete("/documents/{document_id}")
+async def delete_verification_document(document_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    account, document = await _verification_document_access(request, session, document_id)
+    try:
+        delete_object(object_key=document.private_storage_key)
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Document storage deletion failed") from error
+    document.verification_status = "DELETED"
+    await write_audit_log(session, AuditAction.DOCUMENT_DELETED, actor_id=str(account.id), actor_type="STAFF", tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "0.0.0.0", resource_type="VerificationDocument", resource_id=str(document.id))
+    await session.commit()
+    return {"document_id": str(document.id), "status": "DELETED"}
 
 @router.patch("/tickets/{ticket_id}/escalate", response_model=TicketResponse)
 async def escalate_ticket(ticket_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:

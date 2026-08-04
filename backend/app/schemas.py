@@ -214,6 +214,15 @@ class EnterpriseEnquiryUpdate(BaseModel):
     assigned_to_id: UUID | None = None
 
 
+class RefundCreate(BaseModel):
+    amount_minor: int | None = Field(default=None, ge=1)
+    reason: str = Field(min_length=3, max_length=255)
+
+
+class ReconciliationResolve(BaseModel):
+    resolution: str = Field(min_length=3, max_length=1000)
+
+
 class TicketResponse(BaseModel):
     id: UUID
     tenant_id: UUID

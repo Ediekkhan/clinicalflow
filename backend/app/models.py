@@ -445,8 +445,27 @@ class RefundRecord(Base):
     reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="REQUESTED")
     authorized_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    requested_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
     requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReconciliationIssue(Base):
+    __tablename__ = "reconciliation_issues"
+    __table_args__ = (Index("ix_reconciliation_issues_tenant_status", "tenant_id", "status"),)
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("tenants.id"), nullable=False)
+    payment_attempt_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("payment_attempts.id"), nullable=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_reference: Mapped[str] = mapped_column(String(255), nullable=False)
+    local_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    provider_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="OPEN")
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("auth_accounts.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Provider(Base):
@@ -690,6 +709,8 @@ class VerificationDocument(Base):
     original_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    replaced_by_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("verification_documents.id"), nullable=True)
     verification_status: Mapped[str] = mapped_column(String(64), nullable=False, default="PENDING_VERIFICATION")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
 

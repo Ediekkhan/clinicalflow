@@ -45,3 +45,12 @@ def signed_upload_url(*, object_key: str, content_type: str) -> str:
 
 def signed_download_url(*, object_key: str) -> str:
     return _client().generate_presigned_url("get_object", Params={"Bucket": settings.storage_bucket, "Key": object_key}, ExpiresIn=settings.signed_url_ttl_seconds)
+
+
+def object_metadata(*, object_key: str) -> dict[str, object]:
+    result = _client().head_object(Bucket=settings.storage_bucket, Key=object_key)
+    return {"size_bytes": int(result.get("ContentLength") or 0), "content_type": str(result.get("ContentType") or "")}
+
+
+def delete_object(*, object_key: str) -> None:
+    _client().delete_object(Bucket=settings.storage_bucket, Key=object_key)
