@@ -14,6 +14,7 @@ export function BookingWorkspace() {
   const [status, setStatus] = useState<'idle' | 'saving' | 'done'>('idle');
   const [confirmation, setConfirmation] = useState<Appointment | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +43,7 @@ export function BookingWorkspace() {
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus('saving');
+    setError('');
     try {
       const ticket = await createTicket({
         customer_phone: phone,
@@ -53,6 +55,7 @@ export function BookingWorkspace() {
       setStatus('done');
     } catch (error) {
       console.error(error);
+      setError(error instanceof Error ? error.message : 'Unable to complete this booking.');
       setStatus('idle');
     }
   }
@@ -125,6 +128,7 @@ export function BookingWorkspace() {
         {status === 'saving' ? <Loader2 className="h-5 w-5 animate-spin" /> : status === 'done' ? <CheckCircle2 className="h-5 w-5" /> : <Send className="h-5 w-5" />}
         {status === 'done' ? 'Booking sent' : 'Submit clinic ticket'}
       </button>
+      {error ? <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{error}</p> : null}
       {confirmation ? (
         <section role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
           <p className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-5 w-5" /> Appointment confirmed</p>
