@@ -482,7 +482,7 @@ async def hmo_resource(resource: str, request: Request, session: AsyncSession = 
         members = await session.scalar(select(func.count()).select_from(MemberCoverage).where(MemberCoverage.payer_id == payer.id, MemberCoverage.status == "ACTIVE"))
         pending = await session.scalar(select(func.count()).select_from(PriorAuthorization).join(MemberCoverage, MemberCoverage.id == PriorAuthorization.coverage_id).where(MemberCoverage.payer_id == payer.id, PriorAuthorization.status == "REQUESTED"))
         return {"stats": {"claims": claims, "members": members, "pending_authorizations": pending}}
-    if resource == "members":
+    if resource in {"members", "enrollees"}:
         rows = list((await session.execute(select(MemberCoverage).where(MemberCoverage.payer_id == payer.id).order_by(MemberCoverage.starts_at.desc()).limit(200))).scalars().all())
         return [{"id": str(row.id), "patient_id": str(row.patient_id), "member_number": row.member_number, "status": row.status, "starts_at": row.starts_at, "ends_at": row.ends_at} for row in rows]
     if resource == "claims":
@@ -491,7 +491,7 @@ async def hmo_resource(resource: str, request: Request, session: AsyncSession = 
     if resource == "authorizations":
         rows = list((await session.execute(select(PriorAuthorization).join(MemberCoverage, MemberCoverage.id == PriorAuthorization.coverage_id).where(MemberCoverage.payer_id == payer.id).order_by(PriorAuthorization.created_at.desc()).limit(200))).scalars().all())
         return [{"id": str(row.id), "service_code": row.service_code, "status": row.status, "emergency": row.emergency, "reason": row.reason, "created_at": row.created_at} for row in rows]
-    if resource in {"analytics", "utilization", "payments", "facilities"}:
+    if resource in {"analytics", "utilization", "payments", "facilities", "notifications", "settings"}:
         return []
     raise HTTPException(status_code=404, detail="Payer resource not found")
 

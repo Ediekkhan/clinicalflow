@@ -14,7 +14,7 @@ def test_public_landing_content_endpoints_are_available() -> None:
     assert stats.json()["channels_connected"] == 3
     assert len(pricing.json()["plans"]) == 3
     assert len(posts.json()) >= 1
-    assert len(testimonials.json()) >= 1
+    assert testimonials.json() == []
 
 
 def test_demo_request_is_persisted() -> None:

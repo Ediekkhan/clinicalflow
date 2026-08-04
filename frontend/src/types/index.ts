@@ -1,6 +1,6 @@
 export type UrgencyLevel = 'CRITICAL' | 'URGENT' | 'ROUTINE';
 export type IllnessSeverity = 'MILD' | 'MODERATE' | 'SEVERE';
-export type QueueStatus = 'QUEUED' | 'BEING_SEEN' | 'RESOLVED' | 'CANCELLED';
+export type QueueStatus = 'ROUTED' | 'AWAITING_FACILITY_ACCEPTANCE' | 'ACCEPTED' | 'REJECTED' | 'REDIRECTED' | 'TRAVELLING' | 'ARRIVED' | 'CHECKED_IN' | 'WAITING_FOR_NURSE' | 'WAITING_FOR_DOCTOR' | 'QUEUED' | 'BEING_SEEN' | 'ADMITTED' | 'DISCHARGED' | 'TRANSFERRED' | 'CANCELLED' | 'RESOLVED' | 'AWAITING_CLINICAL_REVIEW' | 'SPECIALIST_UNAVAILABLE';
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
 export type Patient = {

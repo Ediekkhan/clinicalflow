@@ -20,8 +20,7 @@ class Settings(BaseSettings):
     enable_imaging_module: bool = False
     enable_billing_module: bool = False
     enable_hackathon_providers: bool = False
-    # Signup verification can be re-enabled with SKIP_PHONE_VERIFICATION=false.
-    skip_phone_verification: bool = True
+    skip_phone_verification: bool = False
     default_credentials_present: bool = False
     log_level: str = "INFO"
     audit_retention_days: int = 365
@@ -83,12 +82,18 @@ class Settings(BaseSettings):
     def validate_production_safety(self) -> "Settings":
         if self.environment not in {"test", "development", "staging", "production", "hackathon"}:
             raise ValueError("APP_ENV must be test, development, staging, production, or hackathon")
-        if self.environment == "production":
+        production_selected = "production" in {
+            self.app_env.strip().lower(),
+            self.app_environment.strip().lower(),
+        }
+        if production_selected:
             problems = []
             if self.enable_test_fixtures or self.enable_demo_content:
                 problems.append("test fixtures and demo content must be disabled")
             if self.default_credentials_present:
                 problems.append("default credentials must not be enabled")
+            if self.skip_phone_verification:
+                problems.append("phone verification must not be skipped")
             if self.debug.strip().lower() in {"1", "true", "yes", "on"}:
                 problems.append("DEBUG must be false")
             if not self.database_url.startswith("postgresql+asyncpg://"):

@@ -211,7 +211,7 @@ async def seed_platform_reviewer() -> tuple[str, str]:
         tenant = Tenant(id=uuid4(), name="Platform Review Workspace", state_location="Platform", status="ACTIVE")
         session.add(tenant)
         await session.flush()
-        account = AuthAccount(tenant_id=tenant.id, role="admin", identifier=f"reviewer-{uuid4().hex}@example.org", password_hash=hash_password("StrongPass1"), first_name="Platform", last_name="Reviewer", email=f"reviewer-{uuid4().hex}@example.org", is_active=True)
+        account = AuthAccount(tenant_id=tenant.id, role="facility_verifier", identifier=f"reviewer-{uuid4().hex}@example.org", password_hash=hash_password("StrongPass1"), first_name="Platform", last_name="Reviewer", email=f"reviewer-{uuid4().hex}@example.org", is_active=True)
         session.add(account)
         await session.flush()
         issued = await create_session(session, account)
@@ -241,12 +241,18 @@ def test_platform_approval_provisions_facility_admin_workspace() -> None:
         client.cookies.set("synaptiverse_refresh", refresh_token)
         approved = client.patch(f"/api/v1/platform/signup-applications/{application.json()['id']}/review", json={"decision": "APPROVE"})
         assert approved.status_code == 200, approved.text
+        activation = client.post("/api/v1/auth/facility-admin/activate", json={"token": approved.json()["activation_token"], "password": "ActivatedPass1!", "mfa_setup": True, "terms_accepted": True})
+        assert activation.status_code == 200, activation.text
         client.cookies.clear()
-        login = client.post("/api/v1/auth/hospital_admin/login", json={"email": admin_email, "password": "StrongPass1"})
+        login = client.post("/api/v1/auth/hospital_admin/login", json={"email": admin_email, "password": "ActivatedPass1!"})
         hospitals = client.get("/api/v1/signup/registered-hospitals")
     body = approved.json()
-    assert body["status"] == "ACTIVE"
+    assert body["status"] == "ADMIN_ACTIVATION_PENDING"
+    assert body["activation_required"] is True
     assert body["tenant_id"]
     assert login.status_code == 200, login.text
     assert login.json()["tenant_id"] == body["tenant_id"]
-    assert any(item["id"] == body["tenant_id"] for item in hospitals.json()["items"])
+    # Government verification and administrator activation do not make a
+    # facility routable. It must complete readiness (services, verified staff,
+    # and accepting-patient capacity) before it appears in patient discovery.
+    assert not any(item["id"] == body["tenant_id"] for item in hospitals.json()["items"])

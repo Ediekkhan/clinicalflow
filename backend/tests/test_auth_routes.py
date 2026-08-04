@@ -83,11 +83,11 @@ def test_admin_pin_login_reaches_admin_role() -> None:
     assert response.json()["role"] == "admin"
 
 
-def test_hospital_doctor_login_returns_persisted_profile() -> None:
+def test_hospital_doctor_email_login_returns_persisted_profile() -> None:
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/auth/hospital/account-login",
-            json={"hospital_code": "UYO-FAMILY", "role": "doctor", "password": "Password123!"},
+            "/api/v1/auth/doctor/login",
+            json={"email": "doctor.bassey@example.com", "password": "Password123!"},
         )
         profile = client.get("/api/v1/hospital/me")
     assert response.status_code == 200
@@ -95,18 +95,16 @@ def test_hospital_doctor_login_returns_persisted_profile() -> None:
     assert profile.json()["role"] == "doctor"
 
 
-def test_hospital_nurse_and_admin_logins_use_their_persisted_credentials() -> None:
-    credentials = (("nurse", "2468"), ("hospital_admin", "Password123!"))
-    for role, password in credentials:
-        with TestClient(app) as client:
-            response = client.post(
-                "/api/v1/auth/hospital/account-login",
-                json={"hospital_code": "UYO-FAMILY", "role": role, "password": password},
-            )
-            profile = client.get("/api/v1/hospital/me")
-        assert response.status_code == 200
-        assert profile.status_code == 200
-        assert profile.json()["role"] == role
+def test_hospital_admin_email_login_uses_persisted_credentials() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/auth/hospital_admin/login",
+            json={"email": "admin.grace@example.com", "password": "Password123!"},
+        )
+        profile = client.get("/api/v1/hospital/me")
+    assert response.status_code == 200
+    assert profile.status_code == 200
+    assert profile.json()["role"] == "hospital_admin"
 
 
 def test_patient_cannot_use_staff_scheduler_mutation() -> None:

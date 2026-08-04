@@ -36,6 +36,7 @@ export function DashboardShell({
   identity = fallbackIdentity,
 }: DashboardShellProps) {
   const resolvedBase = basePath ?? navItems[0]?.href ?? '/dashboard';
+  const supportsWorkspaceSelection = ['doctor', 'specialist', 'nurse', 'hospital', 'clinic'].includes(entityType);
 
   return (
     <div className="min-h-screen bg-[#f4f5ef] text-[#10231e]">
@@ -50,7 +51,7 @@ export function DashboardShell({
           <NotificationBell basePath={resolvedBase} />
         </header>
         <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-5 sm:py-8 md:px-10 md:py-10 xl:px-14 xl:py-12">
-          <WorkspaceSelector />
+          {supportsWorkspaceSelection ? <WorkspaceSelector /> : null}
           {children}
         </div>
       </main>
