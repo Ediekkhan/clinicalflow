@@ -24,7 +24,7 @@ from app.services.registry_service import ensure_facility_registry, ensure_patie
 from app.services.supabase_auth import password_login, provision_user, SupabaseAuthError
 from app.services.facility_verification import review_due_at
 from app.services.country_policies import country_policy, radius_for_urgency
-from app.services.payment_providers import provider_for_country
+from app.services.payment_providers import PaymentProviderError, provider_for_country, provider_for_name
 from app.services.storage_service import delete_object, object_metadata, private_object_key, signed_download_url, signed_upload_url, validate_document, StorageNotConfigured
 
 router = APIRouter(prefix="/api/v1")
@@ -2144,9 +2144,21 @@ async def submit_refund(refund_id: str, request: Request, session: AsyncSession 
     refund = await session.scalar(select(RefundRecord).join(PaymentAttempt).join(CheckoutSession, CheckoutSession.id == PaymentAttempt.checkout_session_id).where(RefundRecord.id == refund_uuid, CheckoutSession.organization_id == account.tenant_id).with_for_update())
     if not refund or refund.status != "APPROVED":
         raise HTTPException(status_code=409, detail="Refund must be approved before submission")
-    refund.status = "SUBMITTED"
+    payment = await session.scalar(select(PaymentAttempt).where(PaymentAttempt.id == refund.payment_attempt_id))
+    checkout = await session.scalar(select(CheckoutSession).where(CheckoutSession.id == payment.checkout_session_id)) if payment else None
+    if not payment or not checkout or not payment.provider_transaction_reference:
+        raise HTTPException(status_code=409, detail="Payment provider reference is unavailable")
+    try:
+        provider = provider_for_name(checkout.provider)
+        result = await provider.create_refund(transaction_reference=payment.provider_transaction_reference, amount_minor=refund.amount_minor, currency=refund.currency, reference=str(refund.id))
+    except PaymentProviderError as error:
+        refund.status = "FAILED"
+        await session.commit()
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    refund.provider_refund_reference = result.get("provider_reference")
+    refund.status = result.get("status") if result.get("status") in {"PENDING", "SUCCEEDED", "FAILED"} else "PENDING"
     await session.commit()
-    return {"refund_id": str(refund.id), "status": refund.status, "message": "Submitted for provider processing"}
+    return {"refund_id": str(refund.id), "status": refund.status, "provider_refund_reference": refund.provider_refund_reference}
 
 
 @router.get("/billing/refunds")
