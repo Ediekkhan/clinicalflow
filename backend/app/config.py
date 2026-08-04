@@ -55,6 +55,31 @@ class Settings(BaseSettings):
     supabase_anon_key: str | None = None
     supabase_service_role_key: str | None = None
     supabase_jwt_secret: str | None = None
+    stripe_secret_key: str | None = None
+    stripe_publishable_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    paystack_secret_key: str | None = None
+    paystack_public_key: str | None = None
+    paystack_webhook_secret: str | None = None
+    email_provider: str | None = None
+    email_api_key: str | None = None
+    email_from_address: str | None = None
+    email_from_name: str = "ClinicalFlow"
+    email_reply_to: str | None = None
+    email_webhook_secret: str | None = None
+    payment_success_url: str = ""
+    payment_cancel_url: str = ""
+    worker_concurrency: int = 1
+    worker_poll_interval_seconds: float = 2.0
+    worker_max_attempts: int = 8
+    worker_dead_letter_alert_threshold: int = 1
+    storage_provider: str | None = None
+    storage_bucket: str | None = None
+    storage_region: str | None = None
+    storage_endpoint: str | None = None
+    storage_access_key: str | None = None
+    storage_secret_key: str | None = None
+    signed_url_ttl_seconds: int = 300
 
     @property
     def supabase_auth_enabled(self) -> bool:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, time, timedelta
@@ -13,8 +14,8 @@ from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Appointment, ApplicationReviewHistory, AppointmentAssignmentRequest, AuthAccount, AuthSession, AuditLog, BreakGlassGrant, CareTeamAssignment, ClinicalPrivilege, ClientMutation, ConsentRecord, ConsultationNote, DemoRequest, FacilityAcceptance, FacilityAdminActivation, FacilityRegistry, FacilityService, FacilityVerificationCase, HealthCardCredential, HospitalDepartment, HospitalDoctorMembership, LaboratoryOrder, DiagnosticReport, Notification, NotificationDelivery, OperationalRecord, OrganizationApplication, OutboxEvent, PatientConsentDirective, PatientFacilityIdentity, PatientRegistry, ProfessionalCredential, ProvenanceRecord, ProviderAvailability, ProviderRegistry, RoutingCandidate, RoutingDecision, SignupApplication, Specialty, StaffInvitation, StaffMembership, Provider, ProviderSlot, SpecialistMessage, TerminologyRelease, Ticket, Tenant, VerificationDocument, VerificationEvent, VerificationFinding, ExternalRegistryCheck
-from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, SignupApplicationCreate, SignupApplicationResponse, SignupInvitationValidateRequest, SignupVerificationRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
+from app.models import Appointment, ApplicationReviewHistory, AppointmentAssignmentRequest, AuthAccount, AuthSession, AuditLog, BreakGlassGrant, CareTeamAssignment, ClinicalPrivilege, ClientMutation, ConsentRecord, ConsultationNote, DemoRequest, EnterpriseEnquiry, ExternalRegistryCheck, FacilityAcceptance, FacilityAdminActivation, FacilityRegistry, FacilityService, FacilityVerificationCase, HealthCardCredential, HospitalDepartment, HospitalDoctorMembership, LaboratoryOrder, DiagnosticReport, Notification, NotificationDelivery, OperationalRecord, OrganizationApplication, OrganizationOnboardingDraft, OutboxEvent, PatientConsentDirective, PatientFacilityIdentity, PatientRegistry, PaymentWebhookEvent, ProfessionalCredential, ProvenanceRecord, ProviderAvailability, ProviderRegistry, RoutingCandidate, RoutingDecision, SignupApplication, Specialty, StaffInvitation, StaffMembership, Provider, ProviderSlot, SpecialistMessage, TerminologyRelease, Ticket, Tenant, VerificationDocument, VerificationEvent, VerificationFinding
+from app.schemas import AppointmentCreate, AppointmentMoveRequest, AppointmentResponse, AuthLoginRequest, AuthProfileResponse, AuthRefreshResponse, AuthSessionResponse, ChannelIntakeRequest, ChannelIntakeResponse, ChannelMenuOption, DemoRequestCreate, DemoRequestResponse, EnterpriseEnquiryCreate, EnterpriseEnquiryUpdate, HospitalLoginRequest, PatientCardUpdate, PatientProfileUpdate, PinLoginRequest, SignupApplicationCreate, SignupApplicationResponse, SignupInvitationValidateRequest, SignupVerificationRequest, SlotLockRequest, TicketCreate, TicketResponse, TicketUpdate, SlotResponse
 from app.services.audit_service import AuditAction, write_audit_log
 from app.services.auth_service import ACCESS_COOKIE, REFRESH_COOKIE, account_for_access_token, apply_tenant_context, create_session, find_account, hash_password, session_for_refresh_token, token_hash, utc_now, verify_password
 from app.services.channel_service import SMS_TEMPLATES, intent_from_text, normalize_webhook, valid_signature
@@ -23,6 +24,7 @@ from app.services.registry_service import ensure_facility_registry, ensure_patie
 from app.services.supabase_auth import password_login, provision_user, SupabaseAuthError
 from app.services.facility_verification import review_due_at
 from app.services.country_policies import country_policy, radius_for_urgency
+from app.services.payment_providers import provider_for_country
 
 router = APIRouter(prefix="/api/v1")
 
@@ -1938,6 +1940,141 @@ async def create_demo_request(payload: DemoRequestCreate, session: AsyncSession 
     session.add(lead)
     await session.commit()
     return DemoRequestResponse(id=lead.id, message="Thanks — your demo request has been received.")
+
+
+@router.post("/public/enterprise-enquiries", status_code=201)
+async def create_enterprise_enquiry(payload: EnterpriseEnquiryCreate, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    if not payload.consent_to_contact:
+        raise HTTPException(status_code=422, detail="Consent to be contacted is required")
+    tenant_id = uuid.UUID(public_tenant_id())
+    await apply_tenant_context(session, tenant_id)
+    idempotency_key = request.headers.get("x-idempotency-key")
+    if idempotency_key:
+        existing = await session.scalar(select(EnterpriseEnquiry).where(EnterpriseEnquiry.idempotency_key == idempotency_key))
+        if existing:
+            return {"reference": existing.reference, "status": existing.status}
+    reference = f"CF-ENT-{datetime.now(UTC):%Y%m%d}-{secrets.token_hex(3).upper()}"
+    data = payload.model_dump(exclude={"consent_to_contact"})
+    enquiry = EnterpriseEnquiry(tenant_id=tenant_id, reference=reference, idempotency_key=idempotency_key, data_json=json.dumps(data), consented_at=utc_now())
+    session.add(enquiry)
+    await session.flush()
+    admins = (await session.execute(select(AuthAccount).where(AuthAccount.tenant_id == tenant_id, AuthAccount.role == "admin", AuthAccount.is_active.is_(True)))).scalars().all()
+    for admin in admins:
+        notification = Notification(tenant_id=tenant_id, recipient_user_id=admin.id, recipient_account_id=admin.id, recipient_role="admin", event_type="ENTERPRISE_ENQUIRY_CREATED", title="New enterprise enquiry", body=f"New enquiry {reference} requires review.", payload_json=json.dumps({"reference": reference}))
+        session.add(notification)
+        await session.flush()
+        session.add(NotificationDelivery(notification_id=notification.id, channel="IN_APP", status="PENDING"))
+        session.add(OutboxEvent(tenant_id=tenant_id, aggregate_type="EnterpriseEnquiry", aggregate_id=enquiry.id, event_type="ENTERPRISE_ENQUIRY_CREATED", recipient_user_id=admin.id, payload_json=json.dumps({"reference": reference, "notification_id": str(notification.id)}), classification="RESTRICTED"))
+    await write_audit_log(session, AuditAction.ENTERPRISE_ENQUIRY_CREATED, actor_id=None, actor_type="PUBLIC", tenant_id=str(tenant_id), ip_address=request.client.host if request.client else "0.0.0.0", resource_type="EnterpriseEnquiry", resource_id=str(enquiry.id), metadata={"reference": reference})
+    await session.commit()
+    return {"reference": reference, "status": enquiry.status}
+
+
+@router.get("/platform/enterprise-enquiries")
+async def list_enterprise_enquiries(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    rows = (await session.execute(select(EnterpriseEnquiry).where(EnterpriseEnquiry.tenant_id == account.tenant_id).order_by(EnterpriseEnquiry.created_at.desc()))).scalars().all()
+    return {"items": [{"reference": row.reference, "status": row.status, **json.loads(row.data_json), "created_at": row.created_at.isoformat(), "internal_notes": row.internal_notes, "assigned_to_id": str(row.assigned_to_id) if row.assigned_to_id else None} for row in rows]}
+
+
+@router.patch("/platform/enterprise-enquiries/{reference}")
+async def update_enterprise_enquiry(reference: str, payload: EnterpriseEnquiryUpdate, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    row = await session.scalar(select(EnterpriseEnquiry).where(EnterpriseEnquiry.reference == reference, EnterpriseEnquiry.tenant_id == account.tenant_id).with_for_update())
+    if not row:
+        raise HTTPException(status_code=404, detail="Enterprise enquiry not found")
+    changes = payload.model_dump(exclude_unset=True)
+    for key, value in changes.items():
+        setattr(row, key, value)
+    await write_audit_log(session, AuditAction.ENTERPRISE_ENQUIRY_UPDATED, actor_id=str(account.id), actor_type="STAFF", tenant_id=str(account.tenant_id), ip_address=request.client.host if request.client else "0.0.0.0", resource_type="EnterpriseEnquiry", resource_id=str(row.id), metadata={"reference": row.reference, "fields": list(changes)})
+    await session.commit()
+    return {"reference": row.reference, "status": row.status, "internal_notes": row.internal_notes}
+
+
+@router.get("/platform/enterprise-enquiries/{reference}")
+async def get_enterprise_enquiry(reference: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    row = await session.scalar(select(EnterpriseEnquiry).where(EnterpriseEnquiry.reference == reference, EnterpriseEnquiry.tenant_id == account.tenant_id))
+    if not row:
+        raise HTTPException(status_code=404, detail="Enterprise enquiry not found")
+    return {"reference": row.reference, "status": row.status, **json.loads(row.data_json), "internal_notes": row.internal_notes, "assigned_to_id": str(row.assigned_to_id) if row.assigned_to_id else None, "created_at": row.created_at.isoformat(), "updated_at": row.updated_at.isoformat()}
+
+
+@router.get("/platform/enterprise-enquiries-report")
+async def export_enterprise_enquiries(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"admin"})
+    rows = (await session.execute(select(EnterpriseEnquiry).where(EnterpriseEnquiry.tenant_id == account.tenant_id).order_by(EnterpriseEnquiry.created_at.desc()))).scalars().all()
+    return {"items": [{"reference": row.reference, "status": row.status, "organization": json.loads(row.data_json).get("organization_legal_name"), "created_at": row.created_at.isoformat()} for row in rows]}
+
+
+@router.get("/billing/status")
+async def billing_status(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    return {"enabled": settings.enable_billing_module, "organization_id": str(account.tenant_id), "plan": "FREE", "subscription_status": "INACTIVE"}
+
+
+@router.get("/onboarding/pro/draft")
+async def get_pro_onboarding_draft(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    draft = await session.scalar(select(OrganizationOnboardingDraft).where(OrganizationOnboardingDraft.account_id == account.id))
+    return {"draft": {"id": str(draft.id), "organization_type": draft.organization_type, "current_step": draft.current_step, "country": draft.country, "data": json.loads(draft.draft_data_json)} if draft else None}
+
+
+@router.put("/onboarding/pro/draft")
+async def save_pro_onboarding_draft(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    payload = await request.json()
+    draft = await session.scalar(select(OrganizationOnboardingDraft).where(OrganizationOnboardingDraft.account_id == account.id).with_for_update())
+    if not draft:
+        draft = OrganizationOnboardingDraft(account_id=account.id, draft_data_json="{}")
+        session.add(draft)
+    draft.organization_type = str(payload.get("organization_type") or draft.organization_type or "")[:64] or None
+    draft.current_step = max(1, min(6, int(payload.get("current_step") or draft.current_step)))
+    draft.country = str(payload.get("country") or draft.country or "")[:2].upper() or None
+    draft.draft_data_json = json.dumps(payload.get("data") or {}, ensure_ascii=True)
+    await session.commit()
+    return {"id": str(draft.id), "current_step": draft.current_step, "saved": True}
+
+
+@router.get("/onboarding/pro/status")
+async def pro_onboarding_status(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    application = await session.scalar(select(SignupApplication).where(SignupApplication.account_id == account.id).order_by(SignupApplication.updated_at.desc()))
+    return {"account_verification": "VERIFIED" if account.email_verified_at or account.phone_verified_at else "PENDING", "organization_application": application.status if application else "DRAFT", "licence_verification": "PENDING", "document_review": "PENDING", "payment": "NOT_STARTED", "workspace_activation": "RESTRICTED"}
+
+
+@router.post("/billing/checkout")
+async def create_billing_checkout(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
+    account = await require_roles(request, session, {"hospital_admin", "admin"})
+    if not settings.enable_billing_module:
+        raise HTTPException(status_code=503, detail="Billing is not configured. Add a production payment provider before enabling checkout.")
+    raise HTTPException(status_code=501, detail="No verified payment provider adapter is configured")
+
+
+@router.post("/billing/webhooks/{provider}")
+async def payment_webhook(provider: str, request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, str]:
+    provider_code = provider.upper()
+    if provider_code not in {"STRIPE", "PAYSTACK"}:
+        raise HTTPException(status_code=404, detail="Unsupported payment provider")
+    body = await request.body()
+    signature = request.headers.get("stripe-signature") if provider_code == "STRIPE" else request.headers.get("x-paystack-signature")
+    adapter = provider_for_country("US" if provider_code == "STRIPE" else "NG")
+    if adapter.name != provider_code or not adapter.verify_webhook(body, signature):
+        raise HTTPException(status_code=401, detail="Invalid payment webhook signature")
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        raise HTTPException(status_code=400, detail="Invalid webhook JSON") from error
+    event_id = str(payload.get("id") or payload.get("data", {}).get("reference") or "")
+    if not event_id:
+        raise HTTPException(status_code=400, detail="Webhook event ID is required")
+    existing = await session.scalar(select(PaymentWebhookEvent).where(PaymentWebhookEvent.provider == provider_code, PaymentWebhookEvent.provider_event_id == event_id))
+    if existing:
+        return {"status": "already_processed"}
+    event = PaymentWebhookEvent(provider=provider_code, provider_event_id=event_id, event_type=str(payload.get("type") or payload.get("event") or "unknown"), payload_hash=hashlib.sha256(body).hexdigest(), processing_status="PROCESSED", processed_at=utc_now())
+    session.add(event)
+    await session.commit()
+    return {"status": "accepted"}
 
 @router.patch("/tickets/{ticket_id}/escalate", response_model=TicketResponse)
 async def escalate_ticket(ticket_id: str, request: Request, session: AsyncSession = Depends(get_db)) -> TicketResponse:

@@ -77,13 +77,14 @@ function refreshSessionOnce(): Promise<boolean> {
   return refreshPromise;
 }
 
-async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object, retry = true) {
+async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object, options?: { headers?: Record<string, string> }, retry = true) {
   const isAuthenticationRequest = url.startsWith('/api/v1/auth/');
 
   const requestInit: RequestInit = {
     method,
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options?.headers ?? {}),
     },
     credentials: 'include',
     body: body ? JSON.stringify(body) : undefined,
@@ -109,7 +110,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
       redirectToWorkspaceLogin('session-expired');
       return null;
     }
-    return request(method, url, body, false);
+    return request(method, url, body, options, false);
   }
 
   if (!response.ok) {
@@ -137,7 +138,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
 }
 
 export const api = {
-  post: (url: string, body: object) => request('POST', url, body),
+  post: (url: string, body: object, options?: { headers?: Record<string, string> }) => request('POST', url, body, options),
   get: (url: string) => request('GET', url),
   patch: (url: string, body: object) => request('PATCH', url, body),
   delete: (url: string) => request('DELETE', url),

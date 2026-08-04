@@ -207,8 +207,10 @@ async def lifespan(app: FastAPI):
         cache=app.state.redis,
     )
     await app.state.knowledge_graph.start()
-    app.state.outbox_worker = OutboxWorker(app.state.session_factory)
-    await app.state.outbox_worker.start()
+    app.state.outbox_worker = None
+    if settings.environment != "production":
+        app.state.outbox_worker = OutboxWorker(app.state.session_factory)
+        await app.state.outbox_worker.start()
     yield
     await app.state.outbox_worker.stop()
     await app.state.knowledge_graph.close()
