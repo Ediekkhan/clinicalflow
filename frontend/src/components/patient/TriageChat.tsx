@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Calendar, MapPin } from 'lucide-react';
 import { Badge } from '@/components/shared/Badge';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { api } from '@/lib/auth';
+import { bookAppointment } from '@/lib/api';
 
 type IllnessSeverity = 'MILD' | 'MODERATE' | 'SEVERE';
 
@@ -18,9 +19,12 @@ type TriageResponse = {
   severity?: IllnessSeverity;
   severity_label?: string;
   severity_message?: string;
-  nearest_clinic?: { clinic_name?: string; address?: string; distance_km?: number | null; specialist_name?: string | null; match_basis?: string };
-  appointment_slot?: { slot_start?: string; specialist_name?: string; specialty?: string; room_label?: string };
+  required_department?: string;
+  nearest_clinic?: { clinic_name?: string; address?: string; distance_km?: number | null; specialist_name?: string | null; match_basis?: string; required_specialty?: string; emergency_capable?: boolean };
+  alternative_facilities?: { tenant_id?: string; clinic_name?: string; address?: string; distance_km?: number | null; match_basis?: string }[];
+  appointment_slot?: { slot_id?: string; slot_start?: string; specialist_name?: string; specialty?: string; room_label?: string };
   ticket?: { id?: string; ticket_number?: string };
+  appointment?: { id?: string; provider_name?: string; specialty?: string; room_label?: string; starts_at?: string };
 };
 
 function severityTone(severity?: IllnessSeverity) {
@@ -42,15 +46,35 @@ export function TriageChat() {
   const [userMessage, setUserMessage] = useState('');
   const [result, setResult] = useState<TriageResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [pendingAnalysis, setPendingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [countryCode, setCountryCode] = useState('');
   const { coords, error: locationError, isLoading: isLocationLoading, requestLocation } = useGeolocation();
   const responseComplete = Boolean(result && !isLoading);
+
+  useEffect(() => {
+    void api.get('/api/v1/auth/patient/me').then((profile) => {
+      const value = profile as { current_country_code?: string; country_code?: string; country?: string };
+      setCountryCode(String(value.current_country_code || value.country_code || value.country || '').trim().slice(0, 2).toUpperCase());
+    }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (pendingAnalysis && coords && !isLoading) {
+      setPendingAnalysis(false);
+      void submitSymptoms();
+    }
+  }, [coords, pendingAnalysis, isLoading]);
 
   async function submitSymptoms() {
     const symptomText = text.trim();
     if (!symptomText) return;
     if (!coords) {
-      setError('Add your current location before analysis so we can route this ticket to the nearest registered hospital.');
+      setError('Add your current location before analysis so we can route this ticket to a clinically suitable registered hospital.');
+      return;
+    }
+    if (!/^[A-Z]{2}$/.test(countryCode)) {
+      setError('Select your current country before analysis so we never route you across borders automatically.');
       return;
     }
     setUserMessage(symptomText);
@@ -59,25 +83,37 @@ export function TriageChat() {
     setError(null);
     setIsLoading(true);
 
-    const payload = { symptom_description: symptomText, latitude: coords.latitude, longitude: coords.longitude };
+    const payload = { symptom_description: symptomText, latitude: coords.latitude, longitude: coords.longitude, current_country_code: countryCode };
     try {
       const data = (await api.post('/api/v1/patient/triage', payload)) as TriageResponse;
+      if (data.ticket?.id && data.appointment_slot?.slot_id) {
+        try {
+          const profile = await api.get('/api/v1/auth/patient/me') as { phone?: string };
+          if (!profile.phone) throw new Error('Your patient phone number is missing from your profile.');
+          const appointment = await bookAppointment(data.ticket.id, data.appointment_slot.slot_id, profile.phone);
+          data.appointment = appointment;
+          data.messages = [...(data.messages ?? []), 'Your appointment has been confirmed with the assigned care team.'];
+        } catch (bookingError) {
+          console.error(bookingError);
+          data.messages = [...(data.messages ?? []), 'Your ticket was routed successfully. Appointment confirmation is pending hospital availability.'];
+        }
+      }
       setResult(data);
     } catch (caught) {
       console.error(caught);
-      try {
-        const preview = (await api.post('/api/v1/public/triage-preview', payload)) as TriageResponse;
-        setResult({
-          ...preview,
-          messages: ['I analyzed your symptoms using the public triage service.', ...(preview.messages ?? [])],
-        });
-      } catch (fallbackError) {
-        console.error(fallbackError);
-        setError(fallbackError instanceof Error ? fallbackError.message : 'Unable to complete triage right now.');
-      }
+      setError(caught instanceof Error ? caught.message : 'Unable to complete authenticated triage. Please try again.');
     } finally {
       setIsLoading(false);
     }
+  }
+
+  function handleAnalyzeClick() {
+    if (!coords) {
+      setPendingAnalysis(true);
+      requestLocation();
+      return;
+    }
+    void submitSymptoms();
   }
 
   return (
@@ -107,7 +143,7 @@ export function TriageChat() {
             </button>
           </div>
           <p className="mt-2 text-xs leading-5 text-[#60706a]">
-            {coords ? 'Your coordinates will be used only to select the nearest eligible registered hospital for this ticket.' : 'We need browser location permission before creating a ticket, so we do not guess the nearest hospital.'}
+            {coords ? 'Your coordinates will be used only to rank clinically suitable registered facilities for this ticket.' : 'We need browser location permission before creating a ticket, so we do not guess a destination facility.'}
           </p>
           {locationError ? <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{locationError}</p> : null}
         </div>
@@ -138,6 +174,7 @@ export function TriageChat() {
                   </div>
                 ) : null}
                 {result.condition_name ? <p className="mt-3 text-sm text-slate-500">Clinical pattern: <span className="font-semibold text-slate-700">{result.condition_name}</span></p> : null}
+                {result.required_department ? <p className="mt-2 text-sm text-slate-500">Required department: <span className="font-semibold text-slate-700">{result.required_department}</span></p> : null}
                 {result.severity_message ? <p className="mt-2 text-sm text-slate-600">{result.severity_message}</p> : null}
               </div>
             ) : null}
@@ -154,13 +191,28 @@ export function TriageChat() {
                 </div>
               </div>
             ) : null}
-            {result.appointment_slot ? (
+            {(result.alternative_facilities?.length ?? 0) > 0 ? (
+              <div className="max-w-[85%] rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Other suitable facilities</p>
+                <div className="mt-3 divide-y divide-slate-100">
+                  {result.alternative_facilities?.map((facility) => (
+                    <div key={facility.tenant_id} className="py-3 first:pt-0 last:pb-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div><p className="text-sm font-semibold text-slate-900">{facility.clinic_name}</p><p className="text-xs text-slate-500">{facility.address}</p></div>
+                        {typeof facility.distance_km === 'number' ? <span className="shrink-0 text-xs font-semibold text-[#60706a]">{facility.distance_km} km</span> : null}
+                      </div>
+                      {facility.match_basis ? <p className="mt-1 text-xs text-slate-400">{facility.match_basis}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}            {result.appointment_slot ? (
               <div className="max-w-[85%] rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
                 <div className="flex gap-3">
                   <Calendar className="h-5 w-5 text-[#0b5d4b]" />
                   <div className="w-full">
-                    <p className="font-semibold text-slate-900">Suggested available appointment</p>
-                    <p className="text-sm text-slate-500">{[formatSlot(result.appointment_slot.slot_start), result.appointment_slot.specialist_name, result.appointment_slot.specialty, result.appointment_slot.room_label].filter(Boolean).join(' - ')}</p>
+                    <p className="font-semibold text-slate-900">{result.appointment ? 'Appointment confirmed' : 'Suggested available appointment'}</p>
+                    <p className="text-sm text-slate-500">{[formatSlot(result.appointment?.starts_at ?? result.appointment_slot.slot_start), result.appointment?.provider_name ?? result.appointment_slot.specialist_name, result.appointment?.specialty ?? result.appointment_slot.specialty, result.appointment?.room_label ?? result.appointment_slot.room_label].filter(Boolean).join(' - ')}</p>
                     {responseComplete ? (
                       <button
                         onClick={() => router.push('/dashboard/queue')}
@@ -197,11 +249,11 @@ export function TriageChat() {
         <div className="mt-3 flex justify-end gap-2">
           <button
             type="button"
-            disabled={!text.trim() || !coords || isLoading}
-            onClick={() => void submitSymptoms()}
+            disabled={!text.trim() || isLoading || isLocationLoading}
+            onClick={handleAnalyzeClick}
             className="sv-button-dark disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Analyze symptoms
+            {isLocationLoading ? 'Getting location...' : coords ? 'Analyze symptoms' : 'Use location to analyze'}
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>

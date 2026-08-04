@@ -3,13 +3,29 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import asin, cos, radians, sin, sqrt
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import OperationalRecord, Provider, ProviderSlot, Tenant
+from app.models import FacilityRegistry, FacilityService, OperationalRecord, Provider, ProviderSlot, StaffMembership, Tenant
 
 EARTH_RADIUS_KM = 6371.0
+
+
+@dataclass(frozen=True)
+class FacilityCandidate:
+    tenant: Tenant
+    registry: FacilityRegistry
+    eligible: bool
+    distance_km: float | None
+    suitability_score: float
+    has_required_capability: bool
+    has_emergency_capability: bool
+    has_staff_coverage: bool
+    has_capacity: bool
+    reasons: tuple[str, ...]
+    rank: int | None = None
 
 
 @dataclass(frozen=True)
@@ -19,10 +35,18 @@ class FacilityRoute:
     provider: Provider | None
     distance_km: float
     match_basis: str
+    required_service: str
+    required_specialty: str
+    candidates: tuple[FacilityCandidate, ...]
 
 
 def valid_coordinates(latitude: float | None, longitude: float | None) -> bool:
     return latitude is not None and longitude is not None and -90 <= latitude <= 90 and -180 <= longitude <= 180
+
+
+def same_country(patient_country_code: str | None, hospital_country_code: str | None) -> bool:
+    """Country is a hard routing boundary; missing patient country is never guessed."""
+    return bool(patient_country_code and hospital_country_code and patient_country_code.strip().upper() == hospital_country_code.strip().upper())
 
 
 def haversine_km(origin_latitude: float, origin_longitude: float, destination_latitude: float, destination_longitude: float) -> float:
@@ -37,24 +61,111 @@ def haversine_km(origin_latitude: float, origin_longitude: float, destination_la
 
 
 async def nearest_available_slot(session: AsyncSession, tenant_id: Any, specialty: str) -> tuple[ProviderSlot, Provider] | None:
-    async def fetch(match_specialty: bool) -> tuple[ProviderSlot, Provider] | None:
-        filters = [
+    return (await session.execute(
+        select(ProviderSlot, Provider)
+        .join(Provider, Provider.id == ProviderSlot.provider_id)
+        .where(
             ProviderSlot.tenant_id == tenant_id,
             ProviderSlot.is_locked.is_(False),
             ProviderSlot.is_booked.is_(False),
             Provider.is_active.is_(True),
-        ]
-        if match_specialty:
-            filters.append(Provider.specialty == specialty)
-        return (await session.execute(
-            select(ProviderSlot, Provider)
-            .join(Provider, Provider.id == ProviderSlot.provider_id)
-            .where(*filters)
-            .order_by(ProviderSlot.starts_at.asc())
-            .limit(1)
-        )).one_or_none()
+            func.lower(Provider.specialty) == specialty.casefold(),
+        )
+        .order_by(ProviderSlot.starts_at.asc())
+        .limit(1)
+    )).one_or_none()
 
-    return await fetch(True) or await fetch(False)
+
+async def _facility_capability(session: AsyncSession, registry: FacilityRegistry, tenant_id: UUID, specialty: str) -> bool:
+    normalized = specialty.casefold()
+    service = await session.scalar(select(FacilityService.id).where(
+        FacilityService.facility_registry_id == registry.id,
+        FacilityService.status == "ACTIVE",
+        or_(func.lower(FacilityService.specialty_code) == normalized, func.lower(FacilityService.service_code) == normalized),
+    ).limit(1))
+    provider = await session.scalar(select(Provider.id).where(Provider.tenant_id == tenant_id, Provider.is_active.is_(True), func.lower(Provider.specialty) == normalized).limit(1))
+    membership = await session.scalar(select(StaffMembership.id).where(
+        StaffMembership.hospital_id == tenant_id,
+        StaffMembership.is_active.is_(True),
+        StaffMembership.verification_status == "VERIFIED",
+        StaffMembership.employment_status == "ACTIVE",
+        func.lower(StaffMembership.specialty_id) == normalized,
+    ).limit(1))
+    return bool(service or provider or membership)
+
+
+async def _staff_coverage(session: AsyncSession, tenant_id: UUID, specialty: str) -> bool:
+    normalized = specialty.casefold()
+    slot = await nearest_available_slot(session, tenant_id, specialty)
+    membership = await session.scalar(select(StaffMembership.id).where(
+        StaffMembership.hospital_id == tenant_id,
+        StaffMembership.is_active.is_(True),
+        StaffMembership.is_on_duty.is_(True),
+        StaffMembership.verification_status == "VERIFIED",
+        StaffMembership.employment_status == "ACTIVE",
+        func.lower(StaffMembership.specialty_id) == normalized,
+    ).limit(1))
+    return bool(slot or membership)
+
+
+async def rank_eligible_facilities(
+    session: AsyncSession,
+    patient_latitude: float,
+    patient_longitude: float,
+    clinical_route: Any,
+    *,
+    preferred_facility_id: UUID | None = None,
+    patient_country_code: str | None = None,
+    max_distance_km: float | None = None,
+) -> tuple[FacilityCandidate, ...]:
+    if not valid_coordinates(patient_latitude, patient_longitude):
+        return ()
+    disabled_rows = await session.execute(select(OperationalRecord.tenant_id).where(
+        OperationalRecord.entity == "system",
+        OperationalRecord.resource == "settings",
+        OperationalRecord.title == "intake_enabled",
+        OperationalRecord.status == "DISABLED",
+    ))
+    disabled_ids = set(disabled_rows.scalars().all())
+    rows = (await session.execute(select(Tenant, FacilityRegistry).join(FacilityRegistry, FacilityRegistry.tenant_id == Tenant.id))).all()
+    specialty = str(clinical_route.target_specialty or "General Medicine")
+    severe = str(clinical_route.derived_urgency).upper() == "CRITICAL"
+    candidates: list[FacilityCandidate] = []
+    for tenant, registry in rows:
+        reasons: list[str] = []
+        country_match = not patient_country_code or str(registry.country).upper() == patient_country_code.upper()
+        if not country_match:
+            reasons.append("Facility is outside the patient's current country")
+        coordinates_valid = valid_coordinates(tenant.latitude, tenant.longitude)
+        distance = haversine_km(patient_latitude, patient_longitude, tenant.latitude, tenant.longitude) if coordinates_valid and country_match else None
+        capability = await _facility_capability(session, registry, tenant.id, specialty)
+        staff_coverage = await _staff_coverage(session, tenant.id, specialty)
+        capacity = registry.capacity_status.upper() not in {"FULL", "CLOSED", "UNAVAILABLE"}
+        emergency = bool(registry.emergency_capable)
+        active = tenant.status == "ACTIVE" and registry.status == "ACTIVE"
+        accepting = tenant.accepts_patients and registry.accepts_patients and tenant.id not in disabled_ids
+        if not active: reasons.append("Facility is inactive or unverified")
+        if not accepting: reasons.append("Facility is not accepting patients")
+        if not coordinates_valid: reasons.append("Facility has no valid routing coordinates")
+        if not capability: reasons.append(f"Required specialty is unavailable: {specialty}")
+        if not staff_coverage: reasons.append(f"No verified on-duty coverage for {specialty}")
+        if not capacity: reasons.append("Facility is at capacity")
+        if severe and not emergency: reasons.append("Critical cases require emergency capability")
+        within_radius = max_distance_km is None or (distance is not None and distance <= max_distance_km)
+        if not within_radius: reasons.append("Facility is outside the configured service radius")
+        eligible = country_match and active and accepting and coordinates_valid and capability and staff_coverage and capacity and within_radius and (not severe or emergency)
+        score = 0.0
+        if eligible:
+            score = 100.0 + (30.0 if severe and emergency else 10.0 if emergency else 0.0) + 20.0 + 10.0
+            score -= min(distance or 0, 100.0)
+            if preferred_facility_id == tenant.id:
+                score += 15.0
+                reasons.append("Matches patient facility preference")
+            reasons.insert(0, f"Clinically suitable for {specialty}")
+        candidates.append(FacilityCandidate(tenant=tenant, registry=registry, eligible=eligible, distance_km=distance, suitability_score=round(score, 3), has_required_capability=capability, has_emergency_capability=emergency, has_staff_coverage=staff_coverage, has_capacity=capacity, reasons=tuple(reasons)))
+    eligible_sorted = sorted((item for item in candidates if item.eligible), key=lambda item: (-item.suitability_score, item.distance_km or float("inf"), str(item.tenant.id)))
+    rank_by_id = {item.tenant.id: index + 1 for index, item in enumerate(eligible_sorted)}
+    return tuple(FacilityCandidate(**{**item.__dict__, "rank": rank_by_id.get(item.tenant.id)}) for item in candidates)
 
 
 async def select_nearest_eligible_hospital(
@@ -62,45 +173,18 @@ async def select_nearest_eligible_hospital(
     patient_latitude: float,
     patient_longitude: float,
     clinical_route: Any,
+    *,
+    preferred_facility_id: UUID | None = None,
+    patient_country_code: str | None = None,
+    max_distance_km: float | None = None,
 ) -> FacilityRoute | None:
-    if not valid_coordinates(patient_latitude, patient_longitude):
+    candidates = await rank_eligible_facilities(session, patient_latitude, patient_longitude, clinical_route, preferred_facility_id=preferred_facility_id, patient_country_code=patient_country_code, max_distance_km=max_distance_km)
+    selected = min((item for item in candidates if item.eligible), key=lambda item: (item.rank or 999999, str(item.tenant.id)), default=None)
+    if not selected or selected.distance_km is None:
         return None
-
-    disabled_intake_rows = await session.execute(
-        select(OperationalRecord.tenant_id).where(
-            OperationalRecord.entity == "system",
-            OperationalRecord.resource == "settings",
-            OperationalRecord.title == "intake_enabled",
-            OperationalRecord.status == "DISABLED",
-        )
-    )
-    disabled_tenant_ids = set(disabled_intake_rows.scalars().all())
-    tenant_rows = (await session.execute(
-        select(Tenant).where(
-            Tenant.status == "ACTIVE",
-            Tenant.accepts_patients.is_(True),
-            Tenant.latitude.is_not(None),
-            Tenant.longitude.is_not(None),
-        )
-    )).scalars().all()
-
-    candidates = [
-        (tenant, haversine_km(patient_latitude, patient_longitude, tenant.latitude, tenant.longitude))
-        for tenant in tenant_rows
-        if tenant.id not in disabled_tenant_ids and valid_coordinates(tenant.latitude, tenant.longitude)
-    ]
-    if not candidates:
-        return None
-
-    tenant, distance_km = min(candidates, key=lambda candidate: (candidate[1], str(candidate[0].id)))
-    slot_row = await nearest_available_slot(session, tenant.id, clinical_route.target_specialty)
+    specialty = str(clinical_route.target_specialty or "General Medicine")
+    slot_row = await nearest_available_slot(session, selected.tenant.id, specialty)
     slot = slot_row[0] if slot_row else None
     provider = slot_row[1] if slot_row else None
-    return FacilityRoute(
-        tenant=tenant,
-        slot=slot,
-        provider=provider,
-        distance_km=distance_km,
-        match_basis="Nearest active registered hospital by patient coordinates",
-    )
-
+    reason = "; ".join(selected.reasons[:2])
+    return FacilityRoute(tenant=selected.tenant, slot=slot, provider=provider, distance_km=selected.distance_km, match_basis=reason, required_service=specialty, required_specialty=specialty, candidates=candidates)

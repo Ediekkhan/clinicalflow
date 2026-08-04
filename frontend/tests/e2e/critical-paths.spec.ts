@@ -45,6 +45,7 @@ test('specialist and hospital login surfaces establish role sessions', async ({ 
 
   await page.context().clearCookies();
   await page.goto('/hospital/login');
+  await page.getByLabel('Work email').fill('doctor.bassey@example.com');
   await page.getByLabel('Hospital password').fill('Password123!');
   await page.getByRole('button', { name: 'Enter Hospital Workspace' }).click();
   await expect(page).toHaveURL(/\/hospital\/doctor\/patients/);

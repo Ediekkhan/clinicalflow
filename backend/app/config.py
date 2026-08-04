@@ -8,7 +8,20 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     app_name: str = "synaptiverse"
+    app_env: str = ""
     app_environment: str = "development"
+    debug: str = "false"
+    enable_test_fixtures: bool = False
+    enable_demo_content: bool = False
+    enable_lab_module: bool = False
+    enable_pharmacy_module: bool = False
+    enable_payer_module: bool = False
+    enable_government_module: bool = False
+    enable_imaging_module: bool = False
+    enable_billing_module: bool = False
+    enable_hackathon_providers: bool = False
+    skip_phone_verification: bool = False
+    default_credentials_present: bool = False
     log_level: str = "INFO"
     audit_retention_days: int = 365
     session_retention_days: int = 30
@@ -28,11 +41,32 @@ class Settings(BaseSettings):
     neo4j_enabled: bool = False
     auth_access_minutes: int = 15
     auth_refresh_days: int = 14
+    auth_max_failed_attempts: int = 5
+    auth_lockout_minutes: int = 15
     auth_cookie_secure: bool = False
     auth_cookie_samesite: str = "lax"
+    session_secret: str = "development-only-change-me"
     default_tenant_id: str = "11111111-1111-1111-1111-111111111111"
     auto_create_schema: bool = True
     cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
+    # Optional Supabase Auth compatibility layer. Profile and tenant records
+    # remain in the application schema; these values only enable identity sync.
+    supabase_url: str | None = None
+    supabase_anon_key: str | None = None
+    supabase_service_role_key: str | None = None
+    supabase_jwt_secret: str | None = None
+
+    @property
+    def supabase_auth_enabled(self) -> bool:
+        return bool(self.supabase_url and self.supabase_anon_key)
+
+    @property
+    def environment(self) -> str:
+        return (self.app_env or self.app_environment).strip().lower()
+
+    @property
+    def fixtures_enabled(self) -> bool:
+        return self.environment == "test" and self.enable_test_fixtures
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -46,8 +80,22 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_safety(self) -> "Settings":
-        if self.app_environment == "production":
+        if self.environment not in {"test", "development", "staging", "production", "hackathon"}:
+            raise ValueError("APP_ENV must be test, development, staging, production, or hackathon")
+        production_selected = "production" in {
+            self.app_env.strip().lower(),
+            self.app_environment.strip().lower(),
+        }
+        if production_selected:
             problems = []
+            if self.enable_test_fixtures or self.enable_demo_content:
+                problems.append("test fixtures and demo content must be disabled")
+            if self.default_credentials_present:
+                problems.append("default credentials must not be enabled")
+            if self.skip_phone_verification:
+                problems.append("phone verification must not be skipped")
+            if self.debug.strip().lower() in {"1", "true", "yes", "on"}:
+                problems.append("DEBUG must be false")
             if not self.database_url.startswith("postgresql+asyncpg://"):
                 problems.append("DATABASE_URL must use PostgreSQL")
             if self.auto_create_schema:
@@ -56,6 +104,12 @@ class Settings(BaseSettings):
                 problems.append("AUTH_COOKIE_SECURE must be true")
             if self.channel_webhook_secret == "change-me":
                 problems.append("CHANNEL_WEBHOOK_SECRET must be replaced")
+            if len(self.session_secret) < 32 or self.session_secret == "development-only-change-me":
+                problems.append("SESSION_SECRET must be a strong unique value")
+            if self.default_tenant_id == "11111111-1111-1111-1111-111111111111":
+                problems.append("DEFAULT_TENANT_ID must not use the legacy universal demo tenant")
+            if not self.cors_origins or "localhost" in self.cors_origins or "127.0.0.1" in self.cors_origins:
+                problems.append("CORS_ORIGINS must explicitly contain production origins")
             if problems:
                 raise ValueError("Unsafe production configuration: " + "; ".join(problems))
         return self

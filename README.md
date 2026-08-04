@@ -35,6 +35,8 @@ The prompt is also represented in code so future implementation work has a stabl
 
 This project runs locally on SQLite by default, but it also supports a hosted PostgreSQL database via `DATABASE_URL`.
 
+For Supabase PostgreSQL setup, see [SUPABASE_DEPLOYMENT.md](SUPABASE_DEPLOYMENT.md).
+
 Recommended free-tier providers:
 
 - Supabase Postgres — easy setup, Postgres-native, great for teams.
