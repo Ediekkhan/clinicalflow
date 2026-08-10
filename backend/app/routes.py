@@ -362,8 +362,9 @@ def _set_session_cookies(response: Response, access_token: str, refresh_token: s
     response.set_cookie(ACCESS_COOKIE, access_token, max_age=settings.auth_access_minutes * 60, **common)
     response.set_cookie(REFRESH_COOKIE, refresh_token, max_age=settings.auth_refresh_days * 86400, **common)
 
-def _set_role_cookie(response: Response, role: str) -> None:
-    response.set_cookie("clinicalflow_role", role, max_age=settings.auth_refresh_days * 86400, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite, path="/")
+def _delete_legacy_auth_cookies(response: Response) -> None:
+    for name in ("clinicalflow_access", "clinicalflow_refresh", "clinicalflow_role", "synaptiverse_session", "synaptiverse_access_token", "synaptiverse_refresh_token", "synaptiverse_csrf_token", "synaptiverse_auth", "demo_session", "demo_user", "demo_role"):
+        response.delete_cookie(name, path="/")
 
 async def _login_account(account: AuthAccount, request: Request, response: Response, session: AsyncSession) -> AuthSessionResponse:
     issued = await create_session(session, account, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"))
@@ -376,7 +377,6 @@ async def _login_account(account: AuthAccount, request: Request, response: Respo
         issued.session.selected_membership_id = memberships[0].id
     await session.commit()
     _set_session_cookies(response, issued.access_token, issued.refresh_token)
-    _set_role_cookie(response, account.role)
     return AuthSessionResponse(**_build_profile(account).model_dump(), access_expires_at=issued.session.access_expires_at)
 
 async def get_db(request: Request) -> AsyncSession:
@@ -543,7 +543,7 @@ async def logout_auth(request: Request, response: Response, session: AsyncSessio
         await session.commit()
     response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
-    response.delete_cookie("clinicalflow_role", path="/")
+    _delete_legacy_auth_cookies(response)
     response.status_code = 204
     return response
 
@@ -558,7 +558,7 @@ async def logout_all_auth(request: Request, response: Response, session: AsyncSe
     await session.commit()
     response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
-    response.delete_cookie("clinicalflow_role", path="/")
+    _delete_legacy_auth_cookies(response)
     response.status_code = 204
     return response
 

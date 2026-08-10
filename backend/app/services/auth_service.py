@@ -24,8 +24,8 @@ from app.models import (
 )
 from app.services.supabase_auth import account_for_supabase_token
 
-ACCESS_COOKIE = "clinicalflow_access"
-REFRESH_COOKIE = "clinicalflow_refresh"
+ACCESS_COOKIE = "__Host-cf_session"
+REFRESH_COOKIE = "__Host-cf_refresh_token"
 PASSWORD_ITERATIONS = 600_000
 
 

@@ -30,6 +30,7 @@ coverage/
 playwright-report/
 test-results/
 docs/generated/
+docs/
 *.db
 *.sqlite
 *.sqlite3

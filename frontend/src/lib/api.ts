@@ -56,7 +56,6 @@ function loginDestination() {
 
 function clearRoleCookie() {
   if (typeof document === 'undefined') return;
-  document.cookie = 'clinicalflow_role=; Max-Age=0; Path=/; SameSite=Lax';
 }
 
 function redirectToLogin(reason = 'session-expired') {
