@@ -19,28 +19,29 @@ const nav = [
   { href: '/hospital/waiting-room', label: 'Waiting Room', icon: Tv },
 ];
 
-type FacilityProfile = { name?: string; location?: string };
-type SpecialistProfile = { full_name?: string; specialty?: string };
+type HospitalProfile = {
+  name?: string;
+  hospital_name?: string;
+  location?: string;
+  full_name?: string;
+  specialty?: string;
+  role?: string;
+  department_name?: string;
+};
 
 export function HospitalShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [facility, setFacility] = useState<FacilityProfile | null>(null);
-  const [specialist, setSpecialist] = useState<SpecialistProfile | null>(null);
+  const [profile, setProfile] = useState<HospitalProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     async function loadProfiles() {
       try {
-        const [facilityData, specialistData] = await Promise.allSettled([
-          api.get('/api/v1/hospital/me'),
-          api.get('/api/v1/auth/specialist/me'),
-        ]);
-        if (cancelled) return;
-        setFacility(facilityData.status === 'fulfilled' ? (facilityData.value as FacilityProfile) : null);
-        setSpecialist(specialistData.status === 'fulfilled' ? (specialistData.value as SpecialistProfile) : null);
-      } catch (error) {
-        console.error(error);
+        const profileData = await api.get('/api/v1/hospital/me');
+        if (!cancelled) setProfile(profileData as HospitalProfile);
+      } catch {
+        if (!cancelled) setProfile(null);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -51,7 +52,7 @@ export function HospitalShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const subtitle = [facility?.location, specialist?.full_name, specialist?.specialty].filter(Boolean).join(' · ');
+  const subtitle = [profile?.location, profile?.full_name, profile?.specialty ?? profile?.department_name, profile?.role?.replaceAll('_', ' ')].filter(Boolean).join(' · ');
 
   return (
     <div className="min-h-screen bg-[#f4f5ef] pt-20">
@@ -61,7 +62,7 @@ export function HospitalShell({ children }: { children: React.ReactNode }) {
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <Link href="/hospital/dashboard" className="font-display block truncate text-3xl text-blue-300">
-                {facility?.name ?? 'Hospital workspace'}
+                {profile?.hospital_name ?? profile?.name ?? 'Hospital workspace'}
               </Link>
               {isLoading ? <div className="mt-2 h-4 w-56 animate-pulse rounded bg-white/10" /> : subtitle ? <p className="mt-1 max-w-[70vw] truncate text-sm text-slate-300 md:max-w-none">{subtitle}</p> : null}
             </div>

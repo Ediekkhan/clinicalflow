@@ -19,6 +19,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }];
   },
+  async rewrites() {
+    return [{
+      source: '/healthcare-api/:path*',
+      destination: 'https://clinicalflow-l6da.onrender.com/:path*',
+    }];
+  },
 };
 
 export default nextConfig;

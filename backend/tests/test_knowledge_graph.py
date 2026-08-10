@@ -34,7 +34,7 @@ def test_graph_query_is_parameterized_and_contains_no_patient_data() -> None:
 def test_patient_triage_persists_the_graph_decision() -> None:
     with TestClient(app) as client:
         login = client.post("/api/v1/auth/patient/login", json={"phone": "+2348012345678", "password": "Password123!"})
-        response = client.post("/api/v1/patient/triage", json={"symptom_description": "I have chest pain and feel dizzy"})
+        response = client.post("/api/v1/patient/triage", json={"symptom_description": "I have chest pain and feel dizzy", "current_country_code": "NG", "latitude": 5.04, "longitude": 7.91})
         tickets = client.get("/api/v1/tickets")
 
     assert login.status_code == 200

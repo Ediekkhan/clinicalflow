@@ -7,11 +7,11 @@ const pricingTiers = [
     name: 'Free',
     price: '$0',
     cadence: 'forever',
-    description: 'Explore the demo workspace and validate patient intake workflows before connecting a backend.',
+    description: 'Core access for individuals beginning coordinated patient intake and care navigation.',
     cta: 'Start free',
     href: '/signup',
     popular: false,
-    features: ['Frontend demo access', 'Role-based dashboard previews', 'Empty states for live data', 'Basic support resources'],
+    features: ['Patient account access', 'Guided symptom intake', 'Appointment and queue visibility', 'Basic support resources'],
   },
   {
     name: 'Pro',
@@ -19,7 +19,7 @@ const pricingTiers = [
     cadence: 'per month',
     description: 'For growing teams that need faster rollout, API-connected workflows, and operational visibility.',
     cta: 'Choose Pro',
-    href: '/signup?type=clinic',
+    href: '/signup?plan=pro',
     popular: true,
     features: ['Everything in Free', 'Multi-role care workflows', 'Priority implementation support', 'Analytics-ready dashboard surfaces', 'Realtime notification UI'],
   },
@@ -29,7 +29,7 @@ const pricingTiers = [
     cadence: 'annual contract',
     description: 'For hospital networks, payers, and public-sector programs with advanced security and integration needs.',
     cta: 'Contact sales',
-    href: '/book-demo',
+    href: '/contact-sales?plan=enterprise',
     popular: false,
     features: ['Everything in Pro', 'Custom integrations', 'Dedicated onboarding', 'Security and compliance review', 'Facility-wide rollout planning'],
   },
@@ -43,7 +43,7 @@ export default function PricingPage() {
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">Pricing</p>
         <h1 className="font-display mx-auto mt-3 max-w-3xl text-5xl text-[#10231e]">Pricing for every healthcare team</h1>
         <p className="mx-auto mt-4 max-w-2xl text-base leading-7 text-slate-600">
-          Start with the frontend demo today, then scale into API-connected workflows when your backend is ready.
+          Start with essential care coordination, then scale into connected clinical and operational workflows.
         </p>
       </section>
 

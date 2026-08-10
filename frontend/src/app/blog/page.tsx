@@ -52,7 +52,7 @@ const reviews = [
     title: 'VP of Platform Strategy',
     company: 'Civic Health Systems',
     date: '2026-05-29',
-    body: 'ClinicalFlow impressed us with speed, consistency, and a clean path toward enterprise integration. The frontend-only demo let our executives evaluate the network model in a single session, while the architecture kept the door open for secure APIs and real-time data.',
+    body: 'ClinicalFlow impressed us with speed, consistency, and a clean path toward enterprise integration. The connected workflow let our executives evaluate the network model clearly, while the architecture supported secure APIs and real-time data.',
   },
 ] as const;
 

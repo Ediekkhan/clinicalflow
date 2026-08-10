@@ -1,5 +1,12 @@
 import { AppointmentScheduler } from '@/components/AppointmentScheduler';
+import { HospitalShell } from '@/components/HospitalShell';
 
 export default function HospitalAppointmentsPage() {
-  return <main className="min-h-screen bg-slate-50 p-4 md:p-6"><AppointmentScheduler /></main>;
+  return (
+    <HospitalShell>
+      <main className="mx-auto max-w-7xl p-4 md:p-6">
+        <AppointmentScheduler />
+      </main>
+    </HospitalShell>
+  );
 }
