@@ -1368,7 +1368,15 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
     filters = [condition for condition in (SignupApplication.email == payload.email if payload.email else None, SignupApplication.phone == payload.phone if payload.phone else None) if condition is not None]
     if filters and await session.scalar(select(SignupApplication).where(SignupApplication.application_type == role, or_(*filters), SignupApplication.status.notin_(["REJECTED", "SUSPENDED"]))):
         raise HTTPException(status_code=409, detail="An active application already exists for this email or phone")
-    if role == "patient" and await session.scalar(select(AuthAccount).where(or_(AuthAccount.email == payload.email, AuthAccount.phone == payload.phone))):
+    account_filters = [
+        condition
+        for condition in (
+            AuthAccount.email == payload.email if payload.email else None,
+            AuthAccount.phone == payload.phone if payload.phone else None,
+        )
+        if condition is not None
+    ]
+    if role == "patient" and account_filters and await session.scalar(select(AuthAccount).where(or_(*account_filters))):
         raise HTTPException(status_code=409, detail="An account already exists for this email or phone")
     safe_payload = payload.model_dump(exclude={"password", "confirm_password", "invitation_token"})
     application = SignupApplication(reference=_signup_reference(), application_type=role, onboarding_type=SIGNUP_ONBOARDING_TYPES[role], status=SIGNUP_PENDING_STATUSES[role], email=payload.email or payload.data.get("official_email"), phone=payload.phone, country=payload.country, organization_name=payload.data.get("legal_name"), payload_json=json.dumps(safe_payload, default=str), password_hash=hash_password(payload.password) if payload.password else None, invitation_id=invitation.id if invitation else None, consent_version=payload.consent_version)
@@ -1597,7 +1605,7 @@ async def validate_signup_invitation(payload: SignupInvitationValidateRequest, s
     hospital = await session.get(Tenant, invitation.hospital_id)
     return {"valid": True, "organization_id": str(invitation.organization_id or invitation.hospital_id), "hospital_name": hospital.name if hospital else None, "department_id": invitation.department_id, "intended_role": invitation.intended_role or invitation.permitted_role, "specialty_id": invitation.specialty_id, "employment_type": invitation.employment_type, "expires_at": invitation.expires_at}
 
-async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSession, event_type: str) -> SignupApplicationResponse:
+async def _verify_patient(payload: SignupVerificationRequest, response: Response, session: AsyncSession, event_type: str) -> SignupApplicationResponse:
     application = await session.get(SignupApplication, payload.application_id)
     if not application or application.application_type != "patient":
         raise HTTPException(status_code=404, detail="Signup application not found")
@@ -1623,15 +1631,16 @@ async def _verify_patient(payload: SignupVerificationRequest, session: AsyncSess
     session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status="PHONE_VERIFICATION_REQUIRED", new_status="ACTIVE"))
     issued = await create_session(session, account)
     await session.commit()
+    _set_session_cookies(response, issued.access_token, issued.refresh_token)
     return SignupApplicationResponse(id=application.id, reference=application.reference, application_type="patient", onboarding_type=application.onboarding_type, status="ACTIVE", submitted_at=application.submitted_at, login_path="/login", dashboard_path="/dashboard")
 
 @router.post("/signup/verify-phone", response_model=SignupApplicationResponse)
-async def verify_signup_phone(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _verify_patient(payload, session, "PHONE_OTP")
+async def verify_signup_phone(payload: SignupVerificationRequest, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _verify_patient(payload, response, session, "PHONE_OTP")
 
 @router.post("/signup/verify-email", response_model=SignupApplicationResponse)
-async def verify_signup_email(payload: SignupVerificationRequest, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
-    return await _verify_patient(payload, session, "EMAIL_OTP")
+async def verify_signup_email(payload: SignupVerificationRequest, response: Response, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
+    return await _verify_patient(payload, response, session, "EMAIL_OTP")
 
 @router.get("/signup/status/{application_id}", response_model=SignupApplicationResponse)
 async def signup_status(application_id: uuid.UUID, session: AsyncSession = Depends(get_db)) -> SignupApplicationResponse:
@@ -2584,6 +2593,7 @@ async def book_appointment(payload: AppointmentCreate, request: Request, session
 
     slot.is_booked = True
     ticket.appointment_slot = slot.starts_at
+    ticket.assigned_specialist_id = doctor.id
     appointment = Appointment(
         tenant_id=destination_tenant_id,
         hospital_id=destination_tenant_id,

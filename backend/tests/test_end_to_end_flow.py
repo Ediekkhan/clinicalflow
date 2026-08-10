@@ -1,21 +1,24 @@
 import asyncio
 from datetime import timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.config import settings
 from app.models import Tenant, AuthAccount, StaffMembership, Provider, ProviderSlot
 from app.services.auth_service import hash_password
 from app.models import UTC
 
 
-def seed_hospital_and_doctor():
+def seed_hospital_and_doctor(specialty: str):
     async def _seed():
         async with app.state.session_factory() as session:
-            tenant = Tenant(name=f"Test Hospital {uuid4().hex[:6]}", state_location="TestState", latitude=6.5, longitude=3.3, accepts_patients=True, status="ACTIVE")
-            session.add(tenant)
-            await session.flush()
+            tenant = await session.get(Tenant, UUID(settings.default_tenant_id))
+            if tenant is None:
+                tenant = Tenant(id=UUID(settings.default_tenant_id), name="ClinicalFlow", state_location="TestState", latitude=6.5, longitude=3.3, accepts_patients=True, status="ACTIVE")
+                session.add(tenant)
+                await session.flush()
             doctor = AuthAccount(
                 tenant_id=tenant.id,
                 role="specialist",
@@ -25,22 +28,22 @@ def seed_hospital_and_doctor():
                 last_name="Tester",
                 phone=f"+1555{int(uuid4().hex[:8],16)%100000000:08d}",
                 email=f"doc{uuid4().hex[:6]}@example.org",
-                specialty="General Medicine",
+                specialty=specialty,
                 is_active=True,
             )
             session.add(doctor)
             await session.flush()
-            membership = StaffMembership(user_id=doctor.id, hospital_id=tenant.id, department_id="General", role="specialist", specialty_id="General Medicine", verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, is_on_duty=True)
+            membership = StaffMembership(user_id=doctor.id, hospital_id=tenant.id, department_id=specialty, role="specialist", specialty_id=specialty, verification_status="VERIFIED", employment_status="ACTIVE", is_active=True, is_on_duty=True)
             session.add(membership)
             await session.flush()
-            provider = Provider(tenant_id=tenant.id, full_name=f"Dr. {doctor.first_name} {doctor.last_name}", specialty="General Medicine", doctor_id=doctor.id, room_label="A1", is_active=True)
+            provider = Provider(tenant_id=tenant.id, full_name=f"Dr. {doctor.first_name} {doctor.last_name}", specialty=specialty, doctor_id=doctor.id, room_label="A1", is_active=True)
             session.add(provider)
             await session.flush()
             starts = __import__('datetime').datetime.now(UTC) + timedelta(hours=1)
             slot = ProviderSlot(tenant_id=tenant.id, provider_id=provider.id, starts_at=starts, ends_at=starts + timedelta(minutes=30), is_locked=False, is_booked=False)
             session.add(slot)
             await session.commit()
-            return str(tenant.id), str(doctor.id), str(slot.id), doctor.phone, doctor.identifier
+            return str(tenant.id), str(doctor.id), str(slot.id), doctor.email
     return asyncio.run(_seed())
 
 
@@ -48,9 +51,7 @@ def test_end_to_end_patient_journey(monkeypatch):
     # Fix OTP generation to a known code
     monkeypatch.setattr("app.routes.secrets.randbelow", lambda n: 123456)
 
-    tenant_id, doctor_id, slot_id, doctor_phone, doctor_identifier = seed_hospital_and_doctor()
-
-    patient_phone = f"+1415555{str(uuid4().int)[:8]}"
+    patient_phone = f"+23480{uuid4().int % 100_000_000:08d}"
     payload = {
         "first_name": "New",
         "last_name": "Patient",
@@ -66,7 +67,11 @@ def test_end_to_end_patient_journey(monkeypatch):
         "data": {"date_of_birth": "1990-01-01", "city": "TestCity", "emergency_contact_phone": "+14150000000"},
     }
 
-    with TestClient(app) as client:
+    with TestClient(app, base_url="https://testserver") as client:
+        symptom_text = "fever and cough"
+        clinical_route = asyncio.run(app.state.knowledge_graph.route(symptom_text))
+        tenant_id, doctor_id, slot_id, doctor_email = seed_hospital_and_doctor(clinical_route.target_specialty)
+
         # signup
         r = client.post("/api/v1/signup/patient", json=payload)
         assert r.status_code == 201, r.text
@@ -84,7 +89,7 @@ def test_end_to_end_patient_journey(monkeypatch):
         assert me.status_code == 200, me.text
 
         # create a ticket (triage)
-        ticket_payload = {"customer_phone": patient_phone, "raw_intake_text": "fever and cough", "channel": "WEB"}
+        ticket_payload = {"customer_phone": patient_phone, "raw_intake_text": symptom_text, "channel": "WEB"}
         ticket_resp = client.post("/api/v1/tickets", json=ticket_payload)
         assert ticket_resp.status_code == 201, ticket_resp.text
         ticket = ticket_resp.json()
@@ -101,8 +106,8 @@ def test_end_to_end_patient_journey(monkeypatch):
         assert appt.get("status") in {"BOOKED", "AWAITING_CLINICAL_REVIEW", "SPECIALIST_UNAVAILABLE"}
 
     # Doctor logs in and creates consultation note
-    with TestClient(app) as doctor_client:
-        login_payload = {"phone": doctor_phone, "password": "DocPass1"}
+    with TestClient(app, base_url="https://testserver") as doctor_client:
+        login_payload = {"email": doctor_email, "password": "DocPass1"}
         login = doctor_client.post("/api/v1/auth/specialist/login", json=login_payload)
         assert login.status_code == 200, login.text
         # create note as the specialist
