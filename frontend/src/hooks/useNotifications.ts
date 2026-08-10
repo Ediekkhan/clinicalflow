@@ -52,5 +52,26 @@ export function useNotifications() {
     }
   }
 
-  return { notifications, unreadCount, networkState, markAllRead, markRead };
+  async function acknowledge(id: string) {
+    const previous = notifications;
+    const acknowledgedAt = new Date().toISOString();
+    setNotifications((current) => current.map((item) => (
+      item.id === id ? { ...item, is_read: true, acknowledged_at: acknowledgedAt } : item
+    )));
+    try {
+      const response = await api.patch(`/api/v1/notifications/${id}/acknowledge`, {});
+      const confirmedAt = response && typeof response === 'object' && 'acknowledged_at' in response
+        ? String(response.acknowledged_at)
+        : acknowledgedAt;
+      setNotifications((current) => current.map((item) => (
+        item.id === id ? { ...item, acknowledged_at: confirmedAt } : item
+      )));
+    } catch (error) {
+      console.error(error);
+      setNotifications(previous);
+      throw error;
+    }
+  }
+
+  return { notifications, unreadCount, networkState, markAllRead, markRead, acknowledge };
 }

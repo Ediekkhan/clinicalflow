@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 Channel = Literal["WHATSAPP", "USSD", "WEB", "SMS"]
 UrgencyLevel = Literal["CRITICAL", "URGENT", "ROUTINE"]
-QueueStatus = Literal["QUEUED", "BEING_SEEN", "RESOLVED", "AWAITING_CLINICAL_REVIEW", "SPECIALIST_UNAVAILABLE"]
+QueueStatus = Literal["ROUTED", "AWAITING_FACILITY_ACCEPTANCE", "ACCEPTED", "REJECTED", "REDIRECTED", "TRAVELLING", "ARRIVED", "CHECKED_IN", "WAITING_FOR_NURSE", "WAITING_FOR_DOCTOR", "QUEUED", "BEING_SEEN", "ADMITTED", "DISCHARGED", "TRANSFERRED", "CANCELLED", "RESOLVED", "AWAITING_CLINICAL_REVIEW", "SPECIALIST_UNAVAILABLE"]
 
 
 def normalize_nigerian_phone_value(value: str | None) -> str | None:
@@ -69,6 +69,7 @@ class AuthProfileResponse(BaseModel):
     gender: str | None = None
     state: str | None = None
     lga: str | None = None
+    country_code: str = "NG"
     emergency_contact: str | None = None
     hmo_provider: str | None = None
     blood_group: str | None = None
@@ -175,6 +176,51 @@ class DemoRequestCreate(BaseModel):
 class DemoRequestResponse(BaseModel):
     id: UUID
     message: str
+
+
+class EnterpriseEnquiryCreate(BaseModel):
+    organization_legal_name: str = Field(min_length=2, max_length=255)
+    organization_type: str = Field(min_length=2, max_length=80)
+    country: str = Field(min_length=2, max_length=128)
+    operations: str = Field(default="", max_length=2000)
+    contact_name: str = Field(min_length=2, max_length=255)
+    job_title: str = Field(default="", max_length=128)
+    official_work_email: str = Field(min_length=5, max_length=255, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+    telephone: str = Field(default="", max_length=32)
+    website: str = Field(default="", max_length=255)
+    facility_count: int | None = Field(default=None, ge=1, le=1_000_000)
+    staff_count: int | None = Field(default=None, ge=0, le=10_000_000)
+    monthly_patient_volume: int | None = Field(default=None, ge=0, le=100_000_000)
+    current_system: str = Field(default="", max_length=255)
+    integrations: str = Field(default="", max_length=4000)
+    dashboards: str = Field(default="", max_length=2000)
+    security_requirements: str = Field(default="", max_length=4000)
+    compliance_requirements: str = Field(default="", max_length=4000)
+    deployment_model: str = Field(default="", max_length=128)
+    preferred_pilot_date: str = Field(default="", max_length=32)
+    expected_rollout_date: str = Field(default="", max_length=32)
+    budget_range: str = Field(default="", max_length=128)
+    additional_message: str = Field(default="", max_length=5000)
+    preferred_contact_method: str = Field(default="EMAIL", max_length=32)
+    preferred_meeting_date: str = Field(default="", max_length=32)
+    meeting_timezone: str = Field(default="UTC", max_length=64)
+    consent_to_contact: bool
+
+
+class EnterpriseEnquiryUpdate(BaseModel):
+    status: Literal["NEW", "CONTACTED", "QUALIFIED", "PILOT_PROPOSED", "PROPOSAL_SENT", "NEGOTIATION", "WON", "LOST", "ARCHIVED"] | None = None
+    internal_notes: str | None = Field(default=None, max_length=5000)
+    follow_up_at: datetime | None = None
+    assigned_to_id: UUID | None = None
+
+
+class RefundCreate(BaseModel):
+    amount_minor: int | None = Field(default=None, ge=1)
+    reason: str = Field(min_length=3, max_length=255)
+
+
+class ReconciliationResolve(BaseModel):
+    resolution: str = Field(min_length=3, max_length=1000)
 
 
 class TicketResponse(BaseModel):

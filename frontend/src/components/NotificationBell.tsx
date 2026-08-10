@@ -1,29 +1,33 @@
 'use client';
 
-import { Bell, X } from 'lucide-react';
-import { useState } from 'react';
+import { Bell, Check, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { UrgencyBadge } from '@/components/UrgencyBadge';
 import { useNotifications } from '@/hooks/useNotifications';
 import { cn } from '@/lib/utils';
 import type { SynNotification } from '@/types';
 
+function notificationEvent(notification: SynNotification) {
+  return (notification.event_type ?? notification.type ?? '').replaceAll('.', '_').toUpperCase();
+}
+
 function routeForNotification(notification: SynNotification) {
-  const type = (notification as SynNotification & { type?: string }).type;
-  switch (type) {
+  switch (notificationEvent(notification)) {
     case 'NEW_TICKET':
     case 'QUEUE_UPDATE':
     case 'BEING_SEEN':
-      return '/specialist/patients';
-    case 'APPOINTMENT_CONFIRMED':
-    case 'APPOINTMENT_CANCELLED':
-    case 'APPOINTMENT_REMINDER':
-      return '/specialist/schedule';
     case 'TRIAGE_RESULT':
-      return '/specialist/patients';
     case 'PRESCRIPTION_READY':
     case 'LAB_RESULT':
       return '/specialist/patients';
+    case 'APPOINTMENT_ASSIGNED':
+    case 'APPOINTMENT_CONFIRMED':
+    case 'APPOINTMENT_CANCELLED':
+    case 'APPOINTMENT_REMINDER':
+    case 'APPOINTMENT_RESCHEDULED':
+    case 'PATIENT_CHECKED_IN':
+      return '/specialist/schedule';
     default:
       return null;
   }
@@ -32,14 +36,28 @@ function routeForNotification(notification: SynNotification) {
 export function NotificationBell() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const { notifications, unreadCount, markAllRead, markRead } = useNotifications();
+  const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null);
+  const { notifications, unreadCount, markAllRead, markRead, acknowledge } = useNotifications();
+  const visibleNotifications = useMemo(
+    () => notifications.filter((item) => !item.is_read || (item.requires_acknowledgement && !item.acknowledged_at)),
+    [notifications],
+  );
 
-  async function handleClick(notification: SynNotification) {
+  async function handleOpen(notification: SynNotification) {
     await markRead(notification.id);
     const route = routeForNotification(notification);
     if (route) {
       setOpen(false);
       router.push(route);
+    }
+  }
+
+  async function handleAcknowledge(notification: SynNotification) {
+    setAcknowledgingId(notification.id);
+    try {
+      await acknowledge(notification.id);
+    } finally {
+      setAcknowledgingId(null);
     }
   }
 
@@ -69,11 +87,11 @@ export function NotificationBell() {
             <button onClick={markAllRead} className="touch-target w-full bg-[#0b5d4b] text-white hover:bg-blue-700">Mark All Read</button>
           </div>
           <div className="grid gap-3 overflow-y-auto p-4 pt-0">
-            {notifications.filter((item) => !item.is_read).length === 0 ? (
+            {visibleNotifications.length === 0 ? (
               <div className="rounded-card border border-dashed border-[#dbe2dc] bg-white p-8 text-center text-sm text-[#60706a]">You're all caught up</div>
             ) : (
-              notifications.filter((item) => !item.is_read).map((item) => (
-                <button key={item.id} type="button" onClick={() => void handleClick(item)} className="rounded-card border border-[#dbe2dc] bg-white p-4 text-left shadow-sm transition hover:border-[#0b5d4b]">
+              visibleNotifications.map((item) => (
+                <article key={item.id} className="rounded-card border border-[#dbe2dc] bg-white p-4 text-left shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-bold text-[#10231e]">{item.title}</p>
@@ -81,7 +99,20 @@ export function NotificationBell() {
                     </div>
                     {item.urgency_level ? <UrgencyBadge level={item.urgency_level} /> : null}
                   </div>
-                </button>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {routeForNotification(item) ? (
+                      <button type="button" onClick={() => void handleOpen(item)} className="touch-target border border-[#0b5d4b] px-4 text-sm font-semibold text-[#0b5d4b] hover:bg-[#e9f7f2]">
+                        View appointment
+                      </button>
+                    ) : null}
+                    {item.requires_acknowledgement && !item.acknowledged_at ? (
+                      <button type="button" disabled={acknowledgingId === item.id} onClick={() => void handleAcknowledge(item)} className="touch-target inline-flex items-center gap-2 bg-[#0b5d4b] px-4 text-sm font-semibold text-white disabled:opacity-60">
+                        <Check className="h-4 w-4" />
+                        {acknowledgingId === item.id ? 'Acknowledging...' : 'Acknowledge'}
+                      </button>
+                    ) : null}
+                  </div>
+                </article>
               ))
             )}
           </div>

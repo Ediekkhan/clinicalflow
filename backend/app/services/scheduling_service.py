@@ -31,40 +31,35 @@ async def ensure_doctor_memberships(db: AsyncSession, tenant_id: UUID, doctor: A
 
 async def seed_demo_schedule(db: AsyncSession, tenant_id: UUID) -> None:
     await apply_tenant_context(db, tenant_id)
-    existing = await db.scalar(select(Provider.id).where(Provider.tenant_id == tenant_id).limit(1))
     doctor = await db.scalar(select(AuthAccount).where(AuthAccount.tenant_id == tenant_id, AuthAccount.role == "doctor", AuthAccount.is_active.is_(True)).limit(1))
-    if existing:
-        providers = list((await db.execute(select(Provider).where(Provider.tenant_id == tenant_id))).scalars().all())
-        for provider in providers:
-            await ensure_department(db, tenant_id, provider.specialty)
-            if doctor:
-                if provider.doctor_id is None:
-                    provider.doctor_id = doctor.id
-                await ensure_doctor_memberships(db, tenant_id, doctor, provider)
-        await db.commit()
-        return
-
-    providers = [
-        Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name="Demo General Medicine Doctor", specialty="General Medicine", room_label="Room 2"),
-        Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name="Demo Pediatrics Doctor", specialty="Pediatrics", room_label="Room 4"),
-        Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name="Demo Internal Medicine Doctor", specialty="Internal Medicine", room_label="Room 6"),
+    desired = [
+        ("Demo General Medicine Doctor", "General Medicine", "Room 2"),
+        ("Demo Pediatrics Doctor", "Pediatrics", "Room 4"),
+        ("Demo Internal Medicine Doctor", "Internal Medicine", "Room 6"),
+        ("Demo Emergency Medicine Doctor", "Emergency Medicine", "Emergency Room"),
     ]
-    db.add_all(providers)
-    await db.flush()
-    for provider in providers:
+    providers = list((await db.execute(select(Provider).where(Provider.tenant_id == tenant_id))).scalars().all())
+    by_specialty = {provider.specialty: provider for provider in providers}
+    for full_name, specialty, room_label in desired:
+        if specialty not in by_specialty:
+            provider = Provider(tenant_id=tenant_id, doctor_id=doctor.id if doctor else None, full_name=full_name, specialty=specialty, room_label=room_label)
+            db.add(provider)
+            await db.flush()
+            providers.append(provider)
+            by_specialty[specialty] = provider
+    first_day = datetime.combine(datetime.now(UTC).date() + timedelta(days=1), time(hour=8), tzinfo=UTC)
+    for provider_index, provider in enumerate(providers):
         await ensure_department(db, tenant_id, provider.specialty)
         if doctor:
+            if provider.doctor_id is None:
+                provider.doctor_id = doctor.id
             await ensure_doctor_memberships(db, tenant_id, doctor, provider)
-
-    first_day = datetime.combine(datetime.now(UTC).date() + timedelta(days=1), time(hour=8), tzinfo=UTC)
-    for day_offset in range(5):
-        for provider_index, provider in enumerate(providers):
+        # Availability state must not cause duplicate seed rows once all slots are booked.
+        has_seeded_slot = await db.scalar(select(ProviderSlot.id).where(ProviderSlot.provider_id == provider.id).limit(1))
+        if has_seeded_slot:
+            continue
+        for day_offset in range(5):
             for slot_index in range(6):
                 starts_at = first_day + timedelta(days=day_offset, minutes=45 * slot_index + 15 * provider_index)
-                db.add(ProviderSlot(
-                    tenant_id=tenant_id,
-                    provider_id=provider.id,
-                    starts_at=starts_at,
-                    ends_at=starts_at + timedelta(minutes=30),
-                ))
+                db.add(ProviderSlot(tenant_id=tenant_id, provider_id=provider.id, starts_at=starts_at, ends_at=starts_at + timedelta(minutes=30)))
     await db.commit()

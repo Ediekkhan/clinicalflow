@@ -1,6 +1,6 @@
 'use client';
 
-const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? 'http://localhost:8000';
+const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE ?? (process.env.NODE_ENV === 'production' ? '/healthcare-api' : 'http://localhost:8000');
 let refreshPromise: Promise<boolean> | null = null;
 let redirectingToLogin = false;
 
@@ -20,6 +20,19 @@ function getApiBase() {
     return CONFIGURED_API_BASE;
   }
   return CONFIGURED_API_BASE;
+}
+
+function alternateApiBase(base: string) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const alternate = new URL(base);
+    if (alternate.hostname === 'localhost') alternate.hostname = '127.0.0.1';
+    else if (alternate.hostname === '127.0.0.1') alternate.hostname = 'localhost';
+    else return null;
+    return alternate.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
 }
 
 function loginPathFor(pathname: string) {
@@ -64,18 +77,32 @@ function refreshSessionOnce(): Promise<boolean> {
   return refreshPromise;
 }
 
-async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object, retry = true) {
+async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: object, options?: { headers?: Record<string, string> }, retry = true) {
   const isAuthenticationRequest = url.startsWith('/api/v1/auth/');
 
-  const response = await fetch(`${getApiBase()}${url}`, {
+  const requestInit: RequestInit = {
     method,
     headers: {
       ...(body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options?.headers ?? {}),
     },
     credentials: 'include',
     body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
-  });
+  };
+  const base = getApiBase();
+  let response: Response;
+  try {
+    response = await fetch(`${base}${url}`, requestInit);
+  } catch (error) {
+    const fallback = alternateApiBase(base);
+    if (!fallback) throw new Error('Unable to reach the healthcare service. Check that the backend is running.');
+    try {
+      response = await fetch(`${fallback}${url}`, requestInit);
+    } catch {
+      throw new Error('Unable to reach the healthcare service. Check that the backend is running.');
+    }
+  }
 
   if (response.status === 401 && retry && !isAuthenticationRequest) {
     const refreshed = await refreshSessionOnce();
@@ -83,12 +110,19 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
       redirectToWorkspaceLogin('session-expired');
       return null;
     }
-    return request(method, url, body, false);
+    return request(method, url, body, options, false);
   }
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail?.message ?? payload.detail ?? payload.message ?? 'Request failed');
+    const detail = payload.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((item) => {
+        const location = Array.isArray(item?.loc) ? item.loc.join('.') : '';
+        return location ? `${location}: ${item.msg ?? 'invalid value'}` : (item.msg ?? 'Invalid request');
+      }).join('; ')
+      : (detail?.message ?? detail ?? payload.message ?? 'Request failed');
+    throw new Error(typeof message === 'string' ? message : JSON.stringify(message));
   }
 
   if (response.status === 204) {
@@ -104,7 +138,7 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
 }
 
 export const api = {
-  post: (url: string, body: object) => request('POST', url, body),
+  post: (url: string, body: object, options?: { headers?: Record<string, string> }) => request('POST', url, body, options),
   get: (url: string) => request('GET', url),
   patch: (url: string, body: object) => request('PATCH', url, body),
   delete: (url: string) => request('DELETE', url),
