@@ -237,8 +237,8 @@ def test_platform_approval_provisions_facility_admin_workspace() -> None:
         application = client.post("/api/v1/signup/hospital", json=payload)
         assert application.status_code == 201, application.text
         access_token, refresh_token = asyncio.run(seed_platform_reviewer())
-        client.cookies.set("synaptiverse_access", access_token)
-        client.cookies.set("synaptiverse_refresh", refresh_token)
+        client.cookies.set("__Host-cf_session", access_token)
+        client.cookies.set("__Host-cf_refresh_token", refresh_token)
         approved = client.patch(f"/api/v1/platform/signup-applications/{application.json()['id']}/review", json={"decision": "APPROVE"})
         assert approved.status_code == 200, approved.text
         activation = client.post("/api/v1/auth/facility-admin/activate", json={"token": approved.json()["activation_token"], "password": "ActivatedPass1!", "mfa_setup": True, "terms_accepted": True})

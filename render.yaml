@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: synaptiverse-api
+    name: clinicalflow-backend
     runtime: python
     plan: free
     buildCommand: pip install -r backend/requirements.txt
@@ -37,7 +37,7 @@ services:
       - key: WORKER_MAX_ATTEMPTS
         value: "8"
   - type: worker
-    name: synaptiverse-worker
+    name: clinicalflow-worker
     runtime: python
     plan: free
     buildCommand: pip install -r backend/requirements.txt

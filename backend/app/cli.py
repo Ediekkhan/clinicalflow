@@ -91,7 +91,7 @@ async def execute(args: argparse.Namespace) -> dict:
                     payload=payload,
                     version=args.version,
                     checksum=checksum_bytes(encoded),
-                    expected_system="SYNAPTIVERSE_LOCAL",
+                    expected_system="CLINICALFLOW_LOCAL",
                 )
                 return result.__dict__ | {"release_id": str(result.release_id)}
             if args.command == "validate":

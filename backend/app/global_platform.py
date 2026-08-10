@@ -51,7 +51,7 @@ class RoutingPolicy(BaseModel):
 class ClinicalSafetyBoundary(BaseModel):
     positioning: str = "Right care. Right facility. Right time."
     disclaimer: str = (
-        "SynaptiVerse supports care coordination and does not diagnose, replace a clinician, "
+        "ClinicalFlow supports care coordination and does not diagnose, replace a clinician, "
         "or replace emergency services."
     )
     never_hardcode_emergency_contacts: bool = True

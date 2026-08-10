@@ -21,8 +21,8 @@ Requests emit JSON logs containing request ID, method, route template, status, a
 Use the provider's point-in-time recovery where available and take encrypted logical backups before releases/migrations:
 
 ```bash
-pg_dump --format=custom --no-owner --file=synaptiverse.dump "$DATABASE_URL"
-pg_restore --clean --if-exists --no-owner --dbname="$RESTORE_DATABASE_URL" synaptiverse.dump
+pg_dump --format=custom --no-owner --file=clinicalflow.dump "$DATABASE_URL"
+pg_restore --clean --if-exists --no-owner --dbname="$RESTORE_DATABASE_URL" clinicalflow.dump
 ```
 
 Never restore first into production. Restore into an isolated database, run `alembic current`, integrity checks, and critical-path tests, then document the recovery time and recovery point. Keep backups encrypted with restricted access and a retention period matching the approved policy.

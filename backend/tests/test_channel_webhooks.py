@@ -21,9 +21,9 @@ def test_signed_sms_webhook_creates_ticket_and_accepts_delivery_receipt() -> Non
         inbound = json.dumps({"from": phone, "text": "I have fever and weakness", "message_id": "sms-in-1"}, separators=(",", ":")).encode()
         receipt = json.dumps({"message_id": "sms-in-1", "status": "delivered"}, separators=(",", ":")).encode()
         with TestClient(app) as client:
-            response = client.post("/api/v1/webhooks/sms", content=inbound, headers={"x-synaptiverse-signature": signature(inbound, settings.channel_webhook_secret), "content-type": "application/json"})
-            delivery = client.post("/api/v1/webhooks/sms", content=receipt, headers={"x-synaptiverse-signature": signature(receipt, settings.channel_webhook_secret), "content-type": "application/json"})
-            rejected = client.post("/api/v1/webhooks/sms", content=inbound, headers={"x-synaptiverse-signature": "sha256=wrong", "content-type": "application/json"})
+            response = client.post("/api/v1/webhooks/sms", content=inbound, headers={"x-clinicalflow-signature": signature(inbound, settings.channel_webhook_secret), "content-type": "application/json"})
+            delivery = client.post("/api/v1/webhooks/sms", content=receipt, headers={"x-clinicalflow-signature": signature(receipt, settings.channel_webhook_secret), "content-type": "application/json"})
+            rejected = client.post("/api/v1/webhooks/sms", content=inbound, headers={"x-clinicalflow-signature": "sha256=wrong", "content-type": "application/json"})
     finally:
         settings.channel_webhook_secret = previous
 

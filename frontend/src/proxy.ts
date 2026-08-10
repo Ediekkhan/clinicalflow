@@ -26,13 +26,13 @@ export function proxy(request: NextRequest) {
   const portal = protectedPortals.find(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   if (!portal) return NextResponse.next();
 
-  const role = request.cookies.get('synaptiverse_role')?.value;
-  if (role && portal.roles.has(role as never)) return NextResponse.next();
+  const session = request.cookies.get('__Host-cf_session')?.value;
+  if (session) return NextResponse.next();
 
   const loginUrl = request.nextUrl.clone();
   loginUrl.pathname = portal.login;
   loginUrl.searchParams.set('next', `${pathname}${search}`);
-  loginUrl.searchParams.set('reason', role ? 'role-required' : 'authentication-required');
+  loginUrl.searchParams.set('reason', 'authentication-required');
 
   return NextResponse.redirect(loginUrl);
 }

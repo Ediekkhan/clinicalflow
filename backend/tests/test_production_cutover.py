@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from app.config import Settings, settings
 from app.main import app
+from app.services.demo_seeds import _require_fixture_mode
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +33,19 @@ def test_production_settings_reject_legacy_demo_configuration() -> None:
             enable_demo_content=True,
             default_credentials_present=True,
         )
+
+
+def test_demo_seed_functions_require_test_fixture_mode() -> None:
+    previous_environment = settings.app_env
+    previous_fixtures = settings.enable_test_fixtures
+    try:
+        settings.app_env = "production"
+        settings.enable_test_fixtures = True
+        with pytest.raises(RuntimeError, match="only when test fixtures are enabled"):
+            _require_fixture_mode()
+    finally:
+        settings.app_env = previous_environment
+        settings.enable_test_fixtures = previous_fixtures
 
 
 def test_legacy_login_shortcuts_are_not_available_without_test_fixtures() -> None:

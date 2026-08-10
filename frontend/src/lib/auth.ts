@@ -49,7 +49,6 @@ function loginPathFor(pathname: string) {
 
 function clearRoleCookie() {
   if (typeof document === 'undefined') return;
-  document.cookie = 'synaptiverse_role=; Max-Age=0; Path=/; SameSite=Lax';
 }
 
 function redirectToWorkspaceLogin(reason = 'session-expired') {
@@ -130,10 +129,6 @@ async function request(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string,
     return null;
   }
   const payload = await response.json();
-  if (url.includes('/auth/') && url.endsWith('/login') && typeof document !== 'undefined' && typeof payload?.role === 'string') {
-    const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `synaptiverse_role=${encodeURIComponent(payload.role)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
-  }
   return payload;
 }
 

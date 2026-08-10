@@ -7,7 +7,7 @@ Reviewed: 2026-07-28
 
 ## Safety position
 
-SynaptiVerse is an engineering implementation under validation. It is not medically
+ClinicalFlow is an engineering implementation under validation. It is not medically
 certified, legally approved, or ready for unsupervised production care. Clinical
 terminology, routing weights, country policies, prescribing rules, laboratory
 workflows, payer rules, and public-health disclosures require qualified professional

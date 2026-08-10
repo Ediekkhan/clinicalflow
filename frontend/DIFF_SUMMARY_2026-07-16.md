@@ -11,7 +11,7 @@
 
 ## Backend status
 
-- Local database is currently SQLite at `backend/synaptiverse.db`.
+- Local database is currently SQLite at `backend/clinicalflow.db`.
 - Backend config includes a default Neo4j URI, user, and password in `backend/app/config.py`, but there is no active Neo4j integration code in the repository yet.
 - Implemented backend endpoints currently include:
   - `/api/v1/auth/{role}/login`

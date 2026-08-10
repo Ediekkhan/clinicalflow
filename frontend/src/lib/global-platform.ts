@@ -1,4 +1,4 @@
-export type SynaptiverseRole =
+export type ClinicalFlowRole =
   | 'patient'
   | 'caregiver'
   | 'clinician'
@@ -8,7 +8,7 @@ export type SynaptiverseRole =
   | 'emergency_transport'
   | 'payer'
   | 'network_admin'
-  | 'synaptiverse_admin';
+  | 'clinicalflow_admin';
 
 export type TextDirection = 'ltr' | 'rtl';
 
@@ -48,7 +48,7 @@ export type ServiceBoundary = {
 export const globalClinicalBoundary = {
   positioning: 'Right care. Right facility. Right time.',
   patientFacingDisclaimer:
-    'SynaptiVerse supports care coordination and does not diagnose, replace a clinician, or replace emergency services.',
+    'ClinicalFlow supports care coordination and does not diagnose, replace a clinician, or replace emergency services.',
   safetyRules: [
     'Never hardcode emergency numbers in product UI.',
     'Do not encode personal or health information in QR codes.',
@@ -116,7 +116,7 @@ export const serviceBoundaries: ServiceBoundary[] = [
   },
 ];
 
-export const roleWorkspaceRoutes: Record<SynaptiverseRole, string> = {
+export const roleWorkspaceRoutes: Record<ClinicalFlowRole, string> = {
   patient: '/dashboard',
   caregiver: '/dashboard',
   clinician: '/specialist/dashboard',
@@ -126,5 +126,5 @@ export const roleWorkspaceRoutes: Record<SynaptiverseRole, string> = {
   emergency_transport: '/moh/dashboard',
   payer: '/hmo/dashboard',
   network_admin: '/moh/dashboard',
-  synaptiverse_admin: '/dashboard/admin',
+  clinicalflow_admin: '/dashboard/admin',
 };

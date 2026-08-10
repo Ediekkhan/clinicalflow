@@ -37,8 +37,8 @@ async def seed_routed_ticket(facility_id: str, suffix: str, status: str = "AWAIT
 
 
 def authenticate(client: TestClient, workspace: dict[str, str]) -> None:
-    client.cookies.set("synaptiverse_access", workspace["access"])
-    client.cookies.set("synaptiverse_refresh", workspace["refresh"])
+    client.cookies.set("__Host-cf_session", workspace["access"])
+    client.cookies.set("__Host-cf_refresh_token", workspace["refresh"])
 
 
 def test_facility_accepts_routed_ticket_then_validates_queue_transitions() -> None:

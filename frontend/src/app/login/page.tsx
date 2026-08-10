@@ -31,11 +31,6 @@ export default function PatientLoginPage() {
     setLoading(true);
     try {
       const session = await api.post('/api/v1/auth/patient/login', { phone: normalizedPhone, password });
-      if (typeof document !== 'undefined') {
-        const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-        const sessionRole = typeof session === 'object' && session && 'role' in session ? String(session.role) : 'patient';
-        document.cookie = `synaptiverse_role=${encodeURIComponent(sessionRole)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
-      }
       window.location.assign('/dashboard');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Invalid credentials');

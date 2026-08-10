@@ -1,4 +1,4 @@
-# SynaptiVerse Backend Clinical Architecture
+# ClinicalFlow Backend Clinical Architecture
 
 Date: 2026-07-28  
 Branch audited: `test_crasy` working tree  

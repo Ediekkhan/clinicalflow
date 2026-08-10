@@ -1,4 +1,4 @@
-# SynaptiVerse Pilot Readiness Report
+# ClinicalFlow Pilot Readiness Report
 
 Date: 2026-07-28  
 Scope: Prompts 1-10 and final hardening review  

@@ -15,7 +15,7 @@ Every key is namespaced as `REDIS_KEY_PREFIX:category:key`. WebSocket envelopes 
 ```dotenv
 REDIS_ENABLED=true
 REDIS_URL=redis://localhost:6379/0
-REDIS_KEY_PREFIX=synaptiverse
+REDIS_KEY_PREFIX=clinicalflow
 AUTH_RATE_LIMIT=10
 PUBLIC_INTAKE_RATE_LIMIT=30
 ```
