@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: clinicalflow-api
+    name: clinicalflow-backend
     runtime: python
     plan: free
     buildCommand: pip install -r backend/requirements.txt
