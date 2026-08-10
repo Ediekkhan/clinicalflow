@@ -37,7 +37,7 @@ export default function HospitalLoginPage() {
       if (typeof document !== 'undefined') {
         const secure = window.location.protocol === 'https:' ? '; Secure' : '';
         const sessionRole = typeof session === 'object' && session && 'role' in session ? String(session.role) : role;
-        document.cookie = `synaptiverse_role=${encodeURIComponent(sessionRole)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
+        document.cookie = `clinicalflow_role=${encodeURIComponent(sessionRole)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
       }
       const nextPath = new URLSearchParams(window.location.search).get('next');
       const defaultPath = role === 'doctor' ? '/hospital/doctor/patients' : '/hospital/dashboard';

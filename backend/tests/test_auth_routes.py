@@ -16,8 +16,8 @@ def test_patient_login_returns_profile_and_session_like_response() -> None:
         )
 
         assert response.status_code == 200
-        assert "synaptiverse_access" in response.cookies
-        assert "synaptiverse_refresh" in response.cookies
+        assert "clinicalflow_access" in response.cookies
+        assert "clinicalflow_refresh" in response.cookies
         profile = client.get("/api/v1/auth/patient/me")
 
     payload = response.json()
@@ -47,9 +47,9 @@ def test_refresh_rotates_session_and_logout_revokes_it() -> None:
             "/api/v1/auth/patient/login",
             json={"phone": "+2348012345678", "password": "Password123!"},
         )
-        old_refresh = login.cookies["synaptiverse_refresh"]
+        old_refresh = login.cookies["clinicalflow_refresh"]
         refreshed = client.post("/api/v1/auth/refresh")
-        new_refresh = refreshed.cookies["synaptiverse_refresh"]
+        new_refresh = refreshed.cookies["clinicalflow_refresh"]
         logged_out = client.post("/api/v1/auth/logout")
         profile = client.get("/api/v1/auth/patient/me")
 
@@ -73,7 +73,7 @@ def test_nurse_pin_login_and_role_cookie() -> None:
         response = client.post("/api/v1/auth/staff/pin-login", json={"role": "nurse", "pin": "2468"})
     assert response.status_code == 200
     assert response.json()["role"] == "nurse"
-    assert response.cookies["synaptiverse_role"] == "nurse"
+    assert response.cookies["clinicalflow_role"] == "nurse"
 
 
 def test_admin_pin_login_reaches_admin_role() -> None:

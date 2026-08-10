@@ -33,7 +33,7 @@ AUTH_COOKIE_SAMESITE=none
 6. Open `https://YOUR-SERVICE.onrender.com/health` and expect:
 
 ```json
-{"status":"ok","service":"synaptiverse","dependencies":{"redis":"degraded-local","neo4j":"degraded-fallback"}}
+{"status":"ok","service":"clinicalflow","dependencies":{"redis":"degraded-local","neo4j":"degraded-fallback"}}
 ```
 
 ## 3. Point the frontend at Render

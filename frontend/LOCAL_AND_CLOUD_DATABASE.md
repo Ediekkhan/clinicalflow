@@ -7,7 +7,7 @@ The application uses one setting for both environments: `DATABASE_URL`. No code 
 Use this in `backend/.env`:
 
 ```env
-DATABASE_URL=sqlite+aiosqlite:///./synaptiverse.db
+DATABASE_URL=sqlite+aiosqlite:///./clinicalflow.db
 AUTO_CREATE_SCHEMA=true
 AUTH_COOKIE_SECURE=false
 AUTH_COOKIE_SAMESITE=lax

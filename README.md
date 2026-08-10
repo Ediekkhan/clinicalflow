@@ -1,4 +1,4 @@
-# SynaptiVerse
+# ClinicalFlow
 
 Local MVP setup for a multi-portal healthcare coordination platform with a working backend slice for tickets, queue updates, and booking flows.
 
@@ -14,10 +14,10 @@ The repository now includes:
 
 ## Global Platform Build Spec
 
-The expanded SynaptiVerse global healthcare coordination prompt has been added at:
+The expanded ClinicalFlow global healthcare coordination prompt has been added at:
 
 ```text
-docs/synaptiverse-global-platform-build-prompt.md
+docs/clinicalflow-global-platform-build-prompt.md
 ```
 
 The prompt is also represented in code so future implementation work has a stable contract:
@@ -92,7 +92,7 @@ curl http://127.0.0.1:8000/health
 Expected response:
 
 ```json
-{"status":"ok","service":"synaptiverse"}
+{"status":"ok","service":"clinicalflow"}
 ```
 
 ## 2. Start the frontend
@@ -155,7 +155,7 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/tickets \
 Authenticate and save the HttpOnly session cookies:
 
 ```bash
-curl -s -c /tmp/synaptiverse.cookies -X POST http://127.0.0.1:8000/api/v1/auth/patient/login \
+curl -s -c /tmp/clinicalflow.cookies -X POST http://127.0.0.1:8000/api/v1/auth/patient/login \
   -H 'Content-Type: application/json' \
   -d '{"phone":"+2348012345678","password":"Password123!"}'
 ```
@@ -163,14 +163,14 @@ curl -s -c /tmp/synaptiverse.cookies -X POST http://127.0.0.1:8000/api/v1/auth/p
 List tickets using the authenticated tenant session:
 
 ```bash
-curl -s -b /tmp/synaptiverse.cookies http://127.0.0.1:8000/api/v1/tickets
+curl -s -b /tmp/clinicalflow.cookies http://127.0.0.1:8000/api/v1/tickets
 ```
 
 Escalate a ticket:
 
 ```bash
 curl -s -X PATCH http://127.0.0.1:8000/api/v1/tickets/<ticket-id>/escalate \
-  -b /tmp/synaptiverse.cookies
+  -b /tmp/clinicalflow.cookies
 ```
 
 ## 4. Run the backend tests
@@ -189,13 +189,13 @@ npm run build
 
 ## Notes for local testing
 
-- The backend uses a local SQLite file at backend/synaptiverse.db.
+- The backend uses a local SQLite file at backend/clinicalflow.db.
 - The default tenant ID is 11111111-1111-1111-1111-111111111111.
 - If you hit a database schema error, remove the local SQLite file and restart the backend:
 
 ```bash
 cd backend
-rm -f synaptiverse.db
+rm -f clinicalflow.db
 ```
 
 ## Main routes to try

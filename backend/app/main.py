@@ -29,7 +29,7 @@ from uuid import UUID
 
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO), format="%(message)s")
-logger = logging.getLogger("synaptiverse")
+logger = logging.getLogger("clinicalflow")
 request_metrics = {"requests_total": 0, "errors_total": 0}
 
 
@@ -219,7 +219,7 @@ async def lifespan(app: FastAPI):
     await app.state.engine.dispose()
 
 
-app = FastAPI(title="SynaptiVerse API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="ClinicalFlow API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -270,7 +270,7 @@ async def health() -> dict[str, Any]:
         database_status = "unavailable"
     return {
         "status": "ok" if database_status == "connected" else "degraded",
-        "service": "synaptiverse",
+        "service": "clinicalflow",
         "dependencies": {
             "database": database_status,
             "redis": "connected" if app.state.redis.available else "degraded-local",
@@ -284,6 +284,6 @@ async def health() -> dict[str, Any]:
 
 @app.get("/metrics", include_in_schema=False)
 async def metrics() -> Response:
-    body = "\n".join([f"synaptiverse_requests_total {request_metrics['requests_total']}", f"synaptiverse_errors_total {request_metrics['errors_total']}"]) + "\n"
+    body = "\n".join([f"clinicalflow_requests_total {request_metrics['requests_total']}", f"clinicalflow_errors_total {request_metrics['errors_total']}"]) + "\n"
     return Response(content=body, media_type="text/plain; version=0.0.4")
 

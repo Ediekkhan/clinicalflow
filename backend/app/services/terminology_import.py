@@ -76,9 +76,9 @@ def local_payload() -> dict[str, Any]:
         )
     return {
         "metadata": {
-            "code_system": "SYNAPTIVERSE_LOCAL",
+            "code_system": "CLINICALFLOW_LOCAL",
             "language": "en",
-            "licence": "SynaptiVerse clinician-reviewed local terminology",
+            "licence": "ClinicalFlow clinician-reviewed local terminology",
         },
         "concepts": concepts,
         "relationships": [],

@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
-    app_name: str = "synaptiverse"
+    app_name: str = "clinicalflow"
     app_env: str = ""
     app_environment: str = "development"
     debug: str = "false"
@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     audit_retention_days: int = 365
     session_retention_days: int = 30
     lead_retention_days: int = 180
-    database_url: str = f"sqlite+aiosqlite:///{Path(__file__).resolve().parent.parent / 'synaptiverse.db'}"
+    database_url: str = f"sqlite+aiosqlite:///{Path(__file__).resolve().parent.parent / 'clinicalflow.db'}"
     redis_url: str = "redis://localhost:6379/0"
     redis_enabled: bool = False
-    redis_key_prefix: str = "synaptiverse"
+    redis_key_prefix: str = "clinicalflow"
     auth_rate_limit: int = 10
     public_intake_rate_limit: int = 30
     channel_webhook_secret: str = "change-me"

@@ -1,4 +1,4 @@
-# SynaptiVerse / ClinicalFlow Production Readiness Audit
+# ClinicalFlow / ClinicalFlow Production Readiness Audit
 
 Audit date: 3 August 2026
 

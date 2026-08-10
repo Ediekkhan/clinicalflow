@@ -6,9 +6,9 @@ from typing import Any
 
 
 SMS_TEMPLATES = {
-    "queue": "SynaptiVerse: Ticket {ticket_number}. Urgency {urgency}. Reply BOOK for slots or CANCEL to cancel.",
-    "booking": "SynaptiVerse: {ticket_number} booked for {date}. Reply CANCEL to cancel.",
-    "cancellation": "SynaptiVerse: Appointment cancelled. Reply BOOK to reschedule.",
+    "queue": "ClinicalFlow: Ticket {ticket_number}. Urgency {urgency}. Reply BOOK for slots or CANCEL to cancel.",
+    "booking": "ClinicalFlow: {ticket_number} booked for {date}. Reply CANCEL to cancel.",
+    "cancellation": "ClinicalFlow: Appointment cancelled. Reply BOOK to reschedule.",
 }
 
 

@@ -1,4 +1,4 @@
-# SynaptiVerse Global Healthcare Implementation Plan
+# ClinicalFlow Global Healthcare Implementation Plan
 
 Status: repository audit and implementation plan  
 Branch audited: `test_crasy`  
@@ -84,7 +84,7 @@ Remaining compatibility limits:
 - PostgreSQL concurrency, RLS, and migration backfill behavior require staging validation with production-like data.
 ## Executive summary
 
-SynaptiVerse is one shared healthcare platform with role-specific workspaces, not ten independent products. The repository already has a working foundation for patient intake, triage, coordinate-based facility routing, hospital queues, same-hospital clinician assignment, appointments, private notifications, multi-facility staff workspaces, and treatment-relationship record access.
+ClinicalFlow is one shared healthcare platform with role-specific workspaces, not ten independent products. The repository already has a working foundation for patient intake, triage, coordinate-based facility routing, hospital queues, same-hospital clinician assignment, appointments, private notifications, multi-facility staff workspaces, and treatment-relationship record access.
 
 The foundation should be preserved. The next work should consolidate membership and department identifiers, make routing capability-aware, introduce durable domain events and registries, and replace generic `OperationalRecord` resources with explicit clinical, laboratory, pharmacy, payer, referral, and public-health models. Production claims must remain limited until external services, country policy, clinical safety, privacy, and regulatory controls are independently reviewed.
 

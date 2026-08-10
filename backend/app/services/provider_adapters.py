@@ -30,9 +30,9 @@ def provider_payload(channel: str, *, recipient: str, message: str, subject: str
     if channel == "SMS":
         return {"To": recipient, "From": sender, "Body": message}
     if channel == "EMAIL":
-        return {"personalizations": [{"to": [{"email": recipient}]}], "from": {"email": sender or "no-reply@example.invalid"}, "subject": subject or "SynaptiVerse notification", "content": [{"type": "text/plain", "value": message}]}
+        return {"personalizations": [{"to": [{"email": recipient}]}], "from": {"email": sender or "no-reply@example.invalid"}, "subject": subject or "ClinicalFlow notification", "content": [{"type": "text/plain", "value": message}]}
     if channel == "PUSH":
-        return {"message": {"token": recipient, "notification": {"title": subject or "SynaptiVerse", "body": message}}}
+        return {"message": {"token": recipient, "notification": {"title": subject or "ClinicalFlow", "body": message}}}
     if channel == "WHATSAPP":
         return {"messaging_product": "whatsapp", "to": recipient, "type": "text", "text": {"preview_url": False, "body": message}}
     if channel == "STORAGE":

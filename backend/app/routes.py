@@ -363,7 +363,7 @@ def _set_session_cookies(response: Response, access_token: str, refresh_token: s
     response.set_cookie(REFRESH_COOKIE, refresh_token, max_age=settings.auth_refresh_days * 86400, **common)
 
 def _set_role_cookie(response: Response, role: str) -> None:
-    response.set_cookie("synaptiverse_role", role, max_age=settings.auth_refresh_days * 86400, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite, path="/")
+    response.set_cookie("clinicalflow_role", role, max_age=settings.auth_refresh_days * 86400, httponly=True, secure=settings.auth_cookie_secure, samesite=settings.auth_cookie_samesite, path="/")
 
 async def _login_account(account: AuthAccount, request: Request, response: Response, session: AsyncSession) -> AuthSessionResponse:
     issued = await create_session(session, account, ip_address=request.client.host if request.client else None, user_agent=request.headers.get("user-agent"))
@@ -543,7 +543,7 @@ async def logout_auth(request: Request, response: Response, session: AsyncSessio
         await session.commit()
     response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
-    response.delete_cookie("synaptiverse_role", path="/")
+    response.delete_cookie("clinicalflow_role", path="/")
     response.status_code = 204
     return response
 
@@ -558,7 +558,7 @@ async def logout_all_auth(request: Request, response: Response, session: AsyncSe
     await session.commit()
     response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
-    response.delete_cookie("synaptiverse_role", path="/")
+    response.delete_cookie("clinicalflow_role", path="/")
     response.status_code = 204
     return response
 
@@ -1182,7 +1182,7 @@ async def channel_webhook(channel: str, request: Request, session: AsyncSession 
     if normalized_channel not in {"whatsapp", "sms"}:
         raise HTTPException(status_code=404, detail="Channel not supported")
     body = await request.body()
-    signature = request.headers.get("x-hub-signature-256") or request.headers.get("x-synaptiverse-signature")
+    signature = request.headers.get("x-hub-signature-256") or request.headers.get("x-clinicalflow-signature")
     if not valid_signature(body, signature, settings.channel_webhook_secret):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
     try:
@@ -1379,7 +1379,7 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
     session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status=None, new_status=application.status))
     default_tenant_id = uuid.UUID(settings.default_tenant_id)
     if role == "patient" and not await session.get(Tenant, default_tenant_id):
-        session.add(Tenant(id=default_tenant_id, name="SynaptiVerse", state_location="Nigeria", accepts_patients=True, status="ACTIVE"))
+        session.add(Tenant(id=default_tenant_id, name="ClinicalFlow", state_location="Nigeria", accepts_patients=True, status="ACTIVE"))
     if role == "patient" and settings.skip_phone_verification:
         data = json.loads(application.payload_json)
         date_of_birth = datetime.fromisoformat(data["data"]["date_of_birth"]) if data.get("data", {}).get("date_of_birth") else None
@@ -2811,14 +2811,14 @@ async def patient_health_card(request: Request, session: AsyncSession = Depends(
         await ensure_facility_registry(session, tenant)
     credential, raw_token = await issue_health_card_credential(session, account, patient)
     await session.commit()
-    return {"card_number": account.card_number, "internal_patient_id": patient.internal_identifier, "issuer": tenant.name if tenant else None, "issued_at": credential.issued_at, "expires_at": credential.expires_at, "emergency_access_enabled": credential.emergency_access_enabled, "qr_payload": f"synaptiverse://health-card/{raw_token}"}
+    return {"card_number": account.card_number, "internal_patient_id": patient.internal_identifier, "issuer": tenant.name if tenant else None, "issued_at": credential.issued_at, "expires_at": credential.expires_at, "emergency_access_enabled": credential.emergency_access_enabled, "qr_payload": f"clinicalflow://health-card/{raw_token}"}
 
 
 @router.post("/health-card/lookup")
 async def health_card_lookup(request: Request, session: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     account = await require_roles(request, session, {"doctor", "specialist", "nurse"})
     payload = await request.json()
-    raw_token = str(payload.get("token") or "").removeprefix("synaptiverse://health-card/").strip()
+    raw_token = str(payload.get("token") or "").removeprefix("clinicalflow://health-card/").strip()
     if not raw_token:
         raise HTTPException(status_code=422, detail="A secure health-card token is required")
     credential = await session.scalar(select(HealthCardCredential).where(HealthCardCredential.token_hash == token_hash(raw_token), HealthCardCredential.status == "ACTIVE").limit(1))
@@ -3133,7 +3133,7 @@ async def patient_triage(request: Request, session: AsyncSession = Depends(get_d
         await persist_routing_decision(session, ticket, clinical_route, candidates, None, preferred_id, reason, patient_country_code=country_code)
         policy = country_policy(country_code)
         emergency_message = f"For emergencies, contact local emergency services at {policy.emergency_number}." if policy else "Contact your local emergency services immediately if this is an emergency."
-        message = f"No eligible SynaptiVerse hospital is currently available in your country. {emergency_message if clinical_route.derived_urgency == 'CRITICAL' else 'You can request telemedicine or local-directory assistance.'}"
+        message = f"No eligible ClinicalFlow hospital is currently available in your country. {emergency_message if clinical_route.derived_urgency == 'CRITICAL' else 'You can request telemedicine or local-directory assistance.'}"
         raise HTTPException(status_code=503, detail={"code": "NO_LOCAL_FACILITY", "message": message, "country_code": country_code, "cross_border": False, "ticket_id": str(ticket.id), "urgency": clinical_route.derived_urgency})
     await persist_routing_decision(session, ticket, clinical_route, candidates, route.tenant.id, preferred_id, route.match_basis, patient_country_code=country_code, route_distance_km=route.distance_km)
     slot_payload = None

@@ -40,7 +40,7 @@ def create_draft(client, suffix: str):
     response = client.post("/api/v1/terminology/releases", json={
         "code_system": f"SV-LOCAL-{suffix}",
         "version": "1.0",
-        "license_reference": "SynaptiVerse local reviewed content",
+        "license_reference": "ClinicalFlow local reviewed content",
         "checksum": uuid4().hex,
         "language": "en",
     })

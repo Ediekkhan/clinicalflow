@@ -14,7 +14,7 @@ CHANNEL_WEBHOOK_SECRET=replace-with-a-long-random-secret
 WHATSAPP_VERIFY_TOKEN=replace-with-provider-verification-token
 ```
 
-Signed requests use `X-Hub-Signature-256` or `X-SynaptiVerse-Signature` with `sha256=<hex digest>`. The default `change-me` secret deliberately rejects every webhook.
+Signed requests use `X-Hub-Signature-256` or `X-ClinicalFlow-Signature` with `sha256=<hex digest>`. The default `change-me` secret deliberately rejects every webhook.
 
 ## Conversation behavior
 

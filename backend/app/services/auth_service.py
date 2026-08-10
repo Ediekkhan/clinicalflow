@@ -24,8 +24,8 @@ from app.models import (
 )
 from app.services.supabase_auth import account_for_supabase_token
 
-ACCESS_COOKIE = "synaptiverse_access"
-REFRESH_COOKIE = "synaptiverse_refresh"
+ACCESS_COOKIE = "clinicalflow_access"
+REFRESH_COOKIE = "clinicalflow_refresh"
 PASSWORD_ITERATIONS = 600_000
 
 
@@ -152,7 +152,7 @@ async def session_for_refresh_token(db: AsyncSession, token: str) -> tuple[AuthA
 async def seed_demo_accounts(db: AsyncSession) -> None:
     tenant_id = UUID("11111111-1111-1111-1111-111111111111")
     if not await db.get(Tenant, tenant_id):
-        db.add(Tenant(id=tenant_id, name="SynaptiVerse Demo Clinic", state_location="Akwa Ibom", latitude=5.0380, longitude=7.9090, accepts_patients=True))
+        db.add(Tenant(id=tenant_id, name="ClinicalFlow Demo Clinic", state_location="Akwa Ibom", latitude=5.0380, longitude=7.9090, accepts_patients=True))
         await db.flush()
     else:
         tenant = await db.get(Tenant, tenant_id)

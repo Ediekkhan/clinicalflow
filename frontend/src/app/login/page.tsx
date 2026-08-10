@@ -34,7 +34,7 @@ export default function PatientLoginPage() {
       if (typeof document !== 'undefined') {
         const secure = window.location.protocol === 'https:' ? '; Secure' : '';
         const sessionRole = typeof session === 'object' && session && 'role' in session ? String(session.role) : 'patient';
-        document.cookie = `synaptiverse_role=${encodeURIComponent(sessionRole)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
+        document.cookie = `clinicalflow_role=${encodeURIComponent(sessionRole)}; Max-Age=1209600; Path=/; SameSite=Lax${secure}`;
       }
       window.location.assign('/dashboard');
     } catch (caught) {

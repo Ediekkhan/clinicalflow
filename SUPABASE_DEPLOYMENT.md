@@ -22,7 +22,7 @@ The backend converts the PostgreSQL URL to the async SQLAlchemy driver automatic
 alembic upgrade head
 ```
 
-Do not use the local `synaptiverse.db` or `hackathon.db` files in production. They are intentionally ignored by Git. The tracked source of truth for the database is `backend/migrations/`.
+Do not use the local `clinicalflow.db` or `hackathon.db` files in production. They are intentionally ignored by Git. The tracked source of truth for the database is `backend/migrations/`.
 
 ## Vercel environment
 

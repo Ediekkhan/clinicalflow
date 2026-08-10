@@ -26,7 +26,7 @@ export function proxy(request: NextRequest) {
   const portal = protectedPortals.find(({ prefix }) => pathname === prefix || pathname.startsWith(`${prefix}/`));
   if (!portal) return NextResponse.next();
 
-  const role = request.cookies.get('synaptiverse_role')?.value;
+  const role = request.cookies.get('clinicalflow_role')?.value;
   if (role && portal.roles.has(role as never)) return NextResponse.next();
 
   const loginUrl = request.nextUrl.clone();

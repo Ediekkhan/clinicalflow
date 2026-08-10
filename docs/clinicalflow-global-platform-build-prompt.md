@@ -1,8 +1,8 @@
-# Codex Build Prompt: SynaptiVerse Global Healthcare Coordination Platform
+# Codex Build Prompt: ClinicalFlow Global Healthcare Coordination Platform
 
 ## Your role
 
-Act as a senior product engineer, UX designer, healthcare-systems architect, security engineer, internationalization specialist, and QA lead. Build a polished, responsive, production-minded MVP of **SynaptiVerse**, an AI-assisted healthcare triage, routing, appointment, health-card, and cross-organization collaboration platform designed for deployment across different health sectors and countries worldwide.
+Act as a senior product engineer, UX designer, healthcare-systems architect, security engineer, internationalization specialist, and QA lead. Build a polished, responsive, production-minded MVP of **ClinicalFlow**, an AI-assisted healthcare triage, routing, appointment, health-card, and cross-organization collaboration platform designed for deployment across different health sectors and countries worldwide.
 
 Do not stop at wireframes or a written plan. Implement the working application, seed it with realistic fictional demo data, run the tests and build, fix failures, and leave the repository in a clean, documented state.
 
@@ -27,20 +27,20 @@ Do not stop at wireframes or a written plan. Implement the working application, 
 
 ## Product vision
 
-SynaptiVerse connects patients, caregivers, clinics, hospitals, doctors, specialists, diagnostic services, pharmacies, emergency transport providers, public-health networks, and payers or insurers in one coordinated care-routing network.
+ClinicalFlow connects patients, caregivers, clinics, hospitals, doctors, specialists, diagnostic services, pharmacies, emergency transport providers, public-health networks, and payers or insurers in one coordinated care-routing network.
 
 The platform should:
 
-- give every registered patient a secure digital and optional physical **SynaptiVerse Health Access Card**;
+- give every registered patient a secure digital and optional physical **ClinicalFlow Health Access Card**;
 - collect symptoms through a guided intake experience;
 - produce an explainable urgency and specialty recommendation without claiming to diagnose;
 - route a patient to the closest **suitable** provider using clinical capability, urgency, travel time, specialist availability, capacity, operating status, jurisdiction, and optional payer or insurance coverage;
 - create and manage appointments;
 - notify the correct doctor based on facility, department, specialty, shift, availability, and capacity;
-- let a new organization create a local patient record linked to the patient's SynaptiVerse network identity;
+- let a new organization create a local patient record linked to the patient's ClinicalFlow network identity;
 - allow healthcare organizations to request specialists from other authorized organizations through remote consultation, visiting-specialist support, or patient transfer;
 - return provider-approved care summaries, results, prescriptions, dispensing updates, transport handovers, and follow-up information to the patient;
-- give patients, caregivers, clinicians, healthcare facilities, diagnostic services, pharmacies, emergency transport providers, payers or insurers, health networks, and SynaptiVerse administrators appropriate dashboards.
+- give patients, caregivers, clinicians, healthcare facilities, diagnostic services, pharmacies, emergency transport providers, payers or insurers, health networks, and ClinicalFlow administrators appropriate dashboards.
 
 Core positioning:
 
@@ -48,7 +48,7 @@ Core positioning:
 
 Important clinical boundary:
 
-> SynaptiVerse supports clinicians and patients. It does not diagnose, replace a clinician, or replace emergency services.
+> ClinicalFlow supports clinicians and patients. It does not diagnose, replace a clinician, or replace emergency services.
 
 ## MVP scope and safety boundary
 
@@ -65,7 +65,7 @@ Build a convincing, functional demonstration and a sound architecture, not a cer
 
 ## Global product architecture
 
-Build SynaptiVerse as a multi-tenant, multi-country, multi-language platform. Do not hardcode one country's healthcare structure, terminology, emergency process, currency, date format, insurance model, clinician-licensing rules, or privacy requirements.
+Build ClinicalFlow as a multi-tenant, multi-country, multi-language platform. Do not hardcode one country's healthcare structure, terminology, emergency process, currency, date format, insurance model, clinician-licensing rules, or privacy requirements.
 
 ### Global control plane and regional data planes
 
@@ -74,7 +74,7 @@ Build SynaptiVerse as a multi-tenant, multi-country, multi-language platform. Do
 - Associate sensitive records with `tenantId`, `regionId`, `countryCode`, and data-residency policy.
 - Do not automatically replicate identifiable health records across national borders.
 - Treat cross-border access and transfer as an explicit, policy-controlled workflow with consent or another approved basis, destination checks, encryption, and audit events.
-- A patient may have one SynaptiVerse account while their clinical records, consent directives, and local patient identifiers remain region scoped.
+- A patient may have one ClinicalFlow account while their clinical records, consent directives, and local patient identifiers remain region scoped.
 
 ### Country and region configuration
 
@@ -109,7 +109,7 @@ Never guess or globally hardcode an emergency number. Emergency content must com
 
 ### Global identity and jurisdiction
 
-- Use globally unique internal IDs, but never imply that SynaptiVerse replaces government identity systems or national health identifiers.
+- Use globally unique internal IDs, but never imply that ClinicalFlow replaces government identity systems or national health identifiers.
 - Keep national identifiers optional, encrypted, region scoped, and behind additional access controls.
 - Record each clinician's licensed jurisdictions, verified credentials, specialties, facility privileges, and telemedicine permissions.
 - A clinician must not receive or accept a cross-border or cross-jurisdiction case unless the configured policy and human authorization permit it.
@@ -128,8 +128,8 @@ Implement role-based access for:
 7. **Emergency Transport/EMS Staff/Dispatcher**
 8. **Payer, Insurer, HMO, or Health-Plan Staff/Administrator**
 9. **Health Network or Regional Administrator**
-10. **SynaptiVerse Operations Administrator**
-11. **SynaptiVerse Compliance/Security Reviewer**
+10. **ClinicalFlow Operations Administrator**
+11. **ClinicalFlow Compliance/Security Reviewer**
 
 A doctor may belong to more than one facility through separate verified facility memberships. Every action must be evaluated within an active organization context.
 
@@ -139,7 +139,7 @@ Build a modern public-facing website that explains the complete network while ke
 
 ### Responsive navigation
 
-- SynaptiVerse logo
+- ClinicalFlow logo
 - How Routing Works
 - Healthcare Providers
 - Payers & Health Plans
@@ -155,7 +155,7 @@ Use a sticky desktop navigation and a clear accessible mobile menu. Do not overc
 
 1. **Hero**
    - Headline: `AI-assisted triage and smart healthcare routing.`
-   - Explain that SynaptiVerse connects patients to suitable nearby care using urgency, facility capability, specialist availability, and travel time.
+   - Explain that ClinicalFlow connects patients to suitable nearby care using urgency, facility capability, specialist availability, and travel time.
    - CTAs: `Find Care` and `Join the Healthcare Network`.
    - Show a credible product-interface preview rather than generic stock imagery.
 
@@ -176,7 +176,7 @@ Use a sticky desktop navigation and a clear accessible mobile menu. Do not overc
    - Pharmacies
    - Emergency transport and referral networks
 
-4. **SynaptiVerse Health Access Card**
+4. **ClinicalFlow Health Access Card**
    - Digital card
    - QR-based verification using an opaque token
    - Region-configurable free or paid first issuance using a mock payment adapter when fees apply
@@ -197,7 +197,7 @@ Use a sticky desktop navigation and a clear accessible mobile menu. Do not overc
    - Clear emergency and non-diagnosis boundaries
 
 7. **Closing CTA**
-   - `Bring your healthcare organization or care network into SynaptiVerse.`
+   - `Bring your healthcare organization or care network into ClinicalFlow.`
 
 ### Design direction
 
@@ -317,7 +317,7 @@ Use the active region's configured term in the interface. For example, the same 
 - `/network/compliance`
 - `/network/settings`
 
-### SynaptiVerse administration routes
+### ClinicalFlow administration routes
 
 - `/admin/dashboard`
 - `/admin/facilities`
@@ -347,7 +347,7 @@ During registration collect only necessary information:
 - payer, insurance, public-plan, or HMO membership only when the patient has one;
 - clear consent and privacy choices.
 
-Generate a globally unique technical SynaptiVerse network ID plus a region-scoped patient identity and an opaque QR verification token. The QR code must never contain raw health data. Provide a polished digital card with:
+Generate a globally unique technical ClinicalFlow network ID plus a region-scoped patient identity and an opaque QR verification token. The QR code must never contain raw health data. Provide a polished digital card with:
 
 - patient name;
 - masked patient number;
@@ -454,13 +454,13 @@ Store an explainable routing decision containing considered facilities, exclusio
 
 ## Routing to a hospital where the patient is not registered
 
-The patient must not create another SynaptiVerse account.
+The patient must not create another ClinicalFlow account.
 
 1. Send the receiving facility a minimal pending-referral notice.
 2. Obtain patient authorization for non-emergency sharing.
 3. Let the facility accept or decline.
 4. On acceptance, create a `LocalPatientIdentity` that links:
-   - SynaptiVerse network ID and region-scoped patient ID;
+   - ClinicalFlow network ID and region-scoped patient ID;
    - facility ID;
    - facility medical-record number;
    - registration status and timestamps.
@@ -518,7 +518,7 @@ Implement working in-app notifications and browser notifications where supported
 
 ## Cross-hospital specialist support
 
-Name the module **SynaptiVerse Specialist Exchange**.
+Name the module **ClinicalFlow Specialist Exchange**.
 
 Support three modes:
 
@@ -529,7 +529,7 @@ Support three modes:
 Workflow:
 
 1. Hospital A creates a request specifying specialty, urgency, clinical question, available equipment, available supporting staff, desired mode, and patient-sharing authorization.
-2. SynaptiVerse searches verified specialists whose organizations allow external support.
+2. ClinicalFlow searches verified specialists whose organizations allow external support.
 3. Hospital B's authorized administrator reviews whether it can release the specialist.
 4. The specialist accepts, declines, requests more information, changes the recommended support mode, or recommends transfer.
 5. Hospital A grants case-scoped, time-limited access to the minimum necessary data.
@@ -559,10 +559,10 @@ For cross-hospital notification:
 Use a hybrid model:
 
 - each care-delivery organization remains the primary source of truth for the detailed record it creates;
-- SynaptiVerse stores platform identity, consent, card, triage, routing, appointments, referrals, notifications, and a patient-facing shared-care summary;
-- hospitals release approved summaries, results, prescriptions, referrals, and follow-up information to the patient through SynaptiVerse;
+- ClinicalFlow stores platform identity, consent, card, triage, routing, appointments, referrals, notifications, and a patient-facing shared-care summary;
+- hospitals release approved summaries, results, prescriptions, referrals, and follow-up information to the patient through ClinicalFlow;
 - payers, insurers, HMOs, and public schemes receive only necessary administrative and authorization information;
-- SynaptiVerse support staff do not have routine access to clinical content.
+- ClinicalFlow support staff do not have routine access to clinical content.
 
 Model FHIR-compatible concepts where practical, including:
 
@@ -601,7 +601,7 @@ Implement one working fictional flow for laboratory results, one for pharmacy di
 1. An authorized clinician or diagnostic professional creates or updates a record in the correct organization context.
 2. Doctor signs or submits it.
 3. The authorized provider workflow validates and releases the patient-facing content.
-4. SynaptiVerse updates the patient's timeline.
+4. ClinicalFlow updates the patient's timeline.
 5. Send a privacy-safe notification such as `You have a new update from your hospital.`
 6. Require authentication before showing clinical content.
 7. Let patients view, download, and request correction of information.
@@ -632,7 +632,7 @@ Implement least-privilege RBAC plus organization and relationship checks.
 | Emergency transport staff | Pickup, destination, urgency, safety needs, ETA, and minimum handover information necessary for transport |
 | Payer or health-plan staff | Eligibility, authorization, covered service, provider, and claim information only |
 | Network or regional administrator | Organization verification, regional configuration, routing policy, and appropriately de-identified aggregate information |
-| SynaptiVerse operations | Platform and routing metadata; no routine clinical-content access |
+| ClinicalFlow operations | Platform and routing metadata; no routine clinical-content access |
 | Compliance reviewer | Audit and policy evidence using masked data wherever possible |
 | Triage engine | Minimum required attributes for the current assessment; no secondary model training by default |
 
@@ -807,7 +807,7 @@ Build clickable demo flows for:
 5. Hospital A requests Doctor B through Specialist Exchange for a secure remote consultation.
 6. Hospital A lacks essential capability, so the specialist recommends stabilization and transfer to Hospital B.
 7. No eligible doctor accepts an appointment; the request escalates to the department administrator.
-8. Lost card is revoked and reissued without changing the patient's SynaptiVerse network identity.
+8. Lost card is revoked and reissued without changing the patient's ClinicalFlow network identity.
 9. Clinician creates a diagnostic order; a fictional laboratory accepts it and releases a signed result to the patient timeline.
 10. Pharmacy verifies and dispenses a fictional prescription and sends a privacy-safe collection update.
 11. A facility requests emergency transport; a dispatcher accepts, updates ETA, and records handover.
@@ -899,7 +899,7 @@ Build clickable demo flows for:
 - De-identified network analytics
 - Regional audit and incident oversight
 
-### SynaptiVerse administrator dashboard
+### ClinicalFlow administrator dashboard
 
 - Facility onboarding and verification
 - Capability and specialist-directory quality
@@ -958,7 +958,7 @@ Add meaningful automated tests for:
 6. Doctor B not receiving Hospital A's normal appointment.
 7. Atomic first-accept locking for urgent assignments.
 8. Escalation when a doctor declines or does not respond.
-9. SynaptiVerse network ID and region-scoped patient ID to local facility record mapping.
+9. ClinicalFlow network ID and region-scoped patient ID to local facility record mapping.
 10. QR token containing no health information.
 11. Lost-card revocation and reissue.
 12. Payer minimum-data access.

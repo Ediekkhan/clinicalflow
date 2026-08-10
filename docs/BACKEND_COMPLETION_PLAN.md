@@ -1,4 +1,4 @@
-# SynaptiVerse Backend Completion Plan
+# ClinicalFlow Backend Completion Plan
 
 Date: 2026-07-28  
 Working branch: `feature/backend-completion`  
