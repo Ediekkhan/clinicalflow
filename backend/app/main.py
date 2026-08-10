@@ -16,8 +16,6 @@ from app.sector_routes import register_sector_routes
 from app.terminology_routes import register_terminology_routes
 from app.models import Base, FacilityService, Provider, Tenant
 from app.routes import register_routes, triage_manager
-from app.services.auth_service import seed_demo_accounts
-from app.services.scheduling_service import seed_demo_schedule
 from app.services.knowledge_graph import KnowledgeGraphService
 from app.services.knowledge_graph import SYMPTOM_ALIASES
 from app.services.registry_service import ensure_facility_registry
@@ -181,6 +179,8 @@ async def lifespan(app: FastAPI):
         if app.state.engine.dialect.name == "sqlite":
             await ensure_sqlite_additive_schema(app.state.engine)
     if settings.fixtures_enabled:
+        from app.services.demo_seeds import seed_demo_accounts, seed_demo_schedule
+
         async with app.state.session_factory() as session:
             await seed_demo_accounts(session)
         async with app.state.session_factory() as session:
