@@ -1,89 +1,48 @@
 # ClinicalFlow
 
-Local MVP setup for a multi-portal healthcare coordination platform with a working backend slice for tickets, queue updates, and booking flows.
+ClinicalFlow is a multi-portal healthcare coordination platform. The repository contains a FastAPI backend, a Next.js frontend, PostgreSQL/SQLite migrations, tenant-aware authorization, patient triage and routing, facility operations, appointments, notifications, and deployment configuration.
 
-## What is working now
+The application is suitable for local development and controlled pilots. Production use still requires real provider credentials, reviewed clinical content, facility and staff verification, security review, and operational monitoring.
 
-The repository now includes:
-
-- A FastAPI backend under backend/ with SQLite persistence for local development.
-- Ticket creation, ticket listing, escalation, and queue status update endpoints under /api/v1/.
-- A tenant-aware WebSocket endpoint for triage updates.
-- A Next.js frontend that calls the backend for booking and queue views.
-- Global-platform architecture scaffolding for regional policy, localization, routing factors, service boundaries, and clinical safety constraints.
-
-## Global Platform Build Spec
-
-The expanded ClinicalFlow global healthcare coordination prompt has been added at:
+## Repository layout
 
 ```text
-docs/clinicalflow-global-platform-build-prompt.md
+backend/                 FastAPI application, models, migrations, and tests
+frontend/                Next.js application and browser tests
+SUPABASE_DEPLOYMENT.md   Supabase, Render, and Vercel deployment runbook
+render.yaml              Render service definitions
+railway.toml             Railway deployment definition
+scripts/                 Operational and backup helpers
 ```
-
-The prompt is also represented in code so future implementation work has a stable contract:
-
-- `frontend/src/lib/global-platform.ts` defines role workspaces, regional policy profiles, routing factors, service boundaries, and frontend safety constraints.
-- `backend/app/global_platform.py` defines Pydantic models for regional policy profiles, routing policy, and clinical safety boundaries.
 
 ## Prerequisites
 
-- Python 3.11+
-- Node.js 18+
+- Python 3.11 or newer
+- Node.js 18 or newer
 - npm
+- PostgreSQL for shared or deployed environments
+- Git
 
-## Cloud database options
+SQLite is the default local database. It is not suitable for a deployed service because its filesystem is local and ephemeral.
 
-This project runs locally on SQLite by default, but it also supports a hosted PostgreSQL database via `DATABASE_URL`.
+## Local setup
 
-For Supabase PostgreSQL setup, see [SUPABASE_DEPLOYMENT.md](SUPABASE_DEPLOYMENT.md).
-
-Recommended free-tier providers:
-
-- Supabase Postgres — easy setup, Postgres-native, great for teams.
-- Neon Postgres — serverless Postgres with a generous free tier.
-- Railway Postgres — simple deployment, quick prototyping.
-- Fly.io Postgres — good for apps already on Fly.
-- PlanetScale MySQL — possible if you prefer MySQL, but Postgres is the recommended path.
-
-For team collaboration, each developer can use local SQLite or point to a shared cloud database by setting `DATABASE_URL` in their env.
-
-## 1. Start the backend
-
-The backend supports local SQLite by default and can be overridden with `DATABASE_URL` for hosted databases.
-
-Install dependencies and apply the current schema first:
-
-```bash
-cd backend
-python -m pip install -r requirements.txt
-PYTHONPATH=$PWD python -m alembic upgrade head
-```
-
-For deployed/shared databases, set `AUTO_CREATE_SCHEMA=false`; local SQLite may keep it enabled for convenience.
+### Backend
 
 From the repository root:
 
 ```bash
 cd backend
-PYTHONPATH=$PWD /usr/local/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+python -m venv .venv
+# macOS/Linux: source .venv/bin/activate
+# Windows PowerShell: .\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+cp .env.example .env  # Windows: Copy-Item .env.example .env
+PYTHONPATH=$PWD python -m alembic upgrade head
+PYTHONPATH=$PWD python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-To use a custom database URL, set `DATABASE_URL` first:
-
-```bash
-cd backend
-export DATABASE_URL=postgresql+asyncpg://user:password@host:5432/dbname
-PYTHONPATH=$PWD /usr/local/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-To use the example env file, copy it and edit the values:
-
-```bash
-cd backend
-cp .env.example .env
-```
-
-If you want to verify that the API is up, open another terminal and run:
+Check the API from another terminal:
 
 ```bash
 curl http://127.0.0.1:8000/health
@@ -95,124 +54,102 @@ Expected response:
 {"status":"ok","service":"clinicalflow"}
 ```
 
-## 2. Start the frontend
+For local SQLite, `AUTO_CREATE_SCHEMA=true` is convenient. For PostgreSQL or any shared environment, use `AUTO_CREATE_SCHEMA=false` and apply Alembic migrations explicitly.
+
+### Frontend
 
 In a second terminal:
 
 ```bash
 cd frontend
 npm install
+cp .env.example .env.local  # Windows: Copy-Item .env.example .env.local
 npm run dev -- --hostname 127.0.0.1 --port 3000
 ```
 
-Open the UI at:
+Open `http://127.0.0.1:3000`. The frontend environment must point to the backend, for example:
 
-```text
-http://127.0.0.1:3000
+```env
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_WS_BASE_URL=ws://127.0.0.1:8000
 ```
 
-## 3. Test the ticket and queue flow
+## Database and migrations
 
-### Option A: Use the booking form
+The tracked database source of truth is `backend/migrations/`. Do not commit `.env`, database files, passwords, JWT secrets, provider keys, or exported patient data.
 
-Open:
-
-```text
-http://127.0.0.1:3000/book
-```
-
-Fill in:
-
-- Patient phone
-- Chief complaint
-
-Submit the form. This sends a request to the backend and creates a ticket.
-
-Then open:
-
-```text
-http://127.0.0.1:3000/clinic/queue
-```
-
-or
-
-```text
-http://127.0.0.1:3000/dashboard/queue
-```
-
-You should see the new ticket appear in the queue list.
-
-### Option B: Use the API directly
-
-Create a ticket:
+Run migrations from the `backend` directory:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/v1/tickets \
-  -H 'Content-Type: application/json' \
-  -d '{"customer_phone":"+2348000000000","raw_intake_text":"I have chest pain","channel":"WEB"}'
+PYTHONPATH=$PWD python -m alembic upgrade head
+PYTHONPATH=$PWD python -m alembic check
 ```
 
-Authenticate and save the HttpOnly session cookies:
+For a clean local database, stop the backend, remove `backend/clinicalflow.db`, and run the migration command again. Never delete a shared or production database to repair a migration problem.
 
-```bash
-curl -s -c /tmp/clinicalflow.cookies -X POST http://127.0.0.1:8000/api/v1/auth/patient/login \
-  -H 'Content-Type: application/json' \
-  -d '{"phone":"+2348012345678","password":"Password123!"}'
-```
+## Deployments
 
-List tickets using the authenticated tenant session:
+ClinicalFlow uses separate services:
 
-```bash
-curl -s -b /tmp/clinicalflow.cookies http://127.0.0.1:8000/api/v1/tickets
-```
+1. **Supabase** provides managed PostgreSQL storage.
+2. **Render** runs the FastAPI backend and optional worker.
+3. **Vercel** runs the Next.js frontend.
 
-Escalate a ticket:
+Read [SUPABASE_DEPLOYMENT.md](SUPABASE_DEPLOYMENT.md) before deploying. The short version is:
 
-```bash
-curl -s -X PATCH http://127.0.0.1:8000/api/v1/tickets/<ticket-id>/escalate \
-  -b /tmp/clinicalflow.cookies
-```
+### Render backend
 
-## 4. Run the backend tests
+- Connect the repository and deploy the `backend` service from `render.yaml`.
+- Build command: `pip install -r backend/requirements.txt`.
+- Start command: `cd backend && python -m alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+- Set `DATABASE_URL` to the Supabase PostgreSQL connection string.
+- Set `APP_ENVIRONMENT=production`, `AUTO_CREATE_SCHEMA=false`, `AUTH_COOKIE_SECURE=true`, a strong `SESSION_SECRET`, and the exact Vercel origin in `CORS_ORIGINS`.
+- Keep test fixtures, demo content, default credentials, and phone-verification bypass disabled in production.
+- Verify the Render `/health` URL before connecting the frontend.
+
+### Vercel frontend
+
+- Set the project root directory to `frontend`.
+- Build command: `npm run build`.
+- Add the backend URL as `NEXT_PUBLIC_API_BASE_URL`.
+- Add the secure WebSocket URL as `NEXT_PUBLIC_WS_BASE_URL` when live updates are enabled.
+- Redeploy after changing environment variables. Do not put `DATABASE_URL`, Supabase service-role keys, or backend secrets in Vercel `NEXT_PUBLIC_*` variables.
+
+## Verification commands
+
+Backend checks:
 
 ```bash
 cd backend
-PYTHONPATH=$PWD /usr/local/bin/python3 -m pytest -q tests/test_audit_service.py
+PYTHONPATH=$PWD python -m pytest -q
+PYTHONPATH=$PWD python -m alembic check
 ```
 
-## 5. Validate the frontend build
+Frontend checks:
 
 ```bash
 cd frontend
+npm run typecheck
 npm run build
 ```
 
-## Notes for local testing
+For browser checks, start the backend and frontend first, then run the Playwright suite configured in `frontend/playwright.config.ts`.
 
-- The backend uses a local SQLite file at backend/clinicalflow.db.
-- The default tenant ID is 11111111-1111-1111-1111-111111111111.
-- If you hit a database schema error, remove the local SQLite file and restart the backend:
+## Main routes
 
-```bash
-cd backend
-rm -f clinicalflow.db
-```
+- `/` public landing page
+- `/pricing` plans and conversion paths
+- `/signup` role selection
+- `/login` patient sign-in
+- `/hospital/login` facility workspace sign-in
+- `/dashboard/chat` patient triage
+- `/dashboard/queue` patient queue tracking
+- `/hospital/queue` facility queue operations
+- `/hospital/appointments` facility scheduling
+- `/health` backend health check
 
-## Main routes to try
+## Production boundaries
 
-- Booking page: /book
-- Clinic queue: /clinic/queue
-- Patient queue: /dashboard/queue
-- Appointment slots: /appointments
-- Backend health: /health
+Before a real clinical launch, configure and verify the email/SMS/push/WhatsApp providers, durable outbox worker, Redis, object storage, payment provider webhooks, PostgreSQL RLS and concurrency behavior, monitoring, backups, restore procedures, accessibility, clinical governance, privacy review, penetration testing, and controlled-pilot acceptance.
 
-## Project structure
-
-```text
-backend/
-  app/                 FastAPI app, routes, models, schemas
-frontend/
-  src/app/             Next.js pages and routes
-  src/components/       UI components for queues, booking, and shell layouts
-  src/lib/             API clients and shared types
-```
+Do not use demo accounts or fixed passwords outside an isolated test environment. Do not treat triage output as a confirmed diagnosis; a qualified clinician must review clinical decisions.
