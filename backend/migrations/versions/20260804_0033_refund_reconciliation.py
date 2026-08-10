@@ -1,5 +1,5 @@
 """Add refund request metadata and reconciliation issues."""
-from alembic import op
+from alembic import context, op
 import sqlalchemy as sa
 
 revision = "20260804_0033"
@@ -9,11 +9,17 @@ depends_on = None
 
 
 def upgrade() -> None:
-    with op.batch_alter_table("refund_records", recreate="always") as batch:
-        batch.add_column(sa.Column("requested_by_id", sa.Uuid(), nullable=True))
-        batch.add_column(sa.Column("idempotency_key", sa.String(length=128), nullable=True))
-        batch.create_foreign_key("fk_refund_records_requested_by", "auth_accounts", ["requested_by_id"], ["id"])
-        batch.create_unique_constraint("uq_refund_records_idempotency_key", ["idempotency_key"])
+    if context.get_context().dialect.name == "sqlite":
+        with op.batch_alter_table("refund_records", recreate="always") as batch:
+            batch.add_column(sa.Column("requested_by_id", sa.Uuid(), nullable=True))
+            batch.add_column(sa.Column("idempotency_key", sa.String(length=128), nullable=True))
+            batch.create_foreign_key("fk_refund_records_requested_by", "auth_accounts", ["requested_by_id"], ["id"])
+            batch.create_unique_constraint("uq_refund_records_idempotency_key", ["idempotency_key"])
+    else:
+        op.add_column("refund_records", sa.Column("requested_by_id", sa.Uuid(), nullable=True))
+        op.add_column("refund_records", sa.Column("idempotency_key", sa.String(length=128), nullable=True))
+        op.create_foreign_key("fk_refund_records_requested_by", "refund_records", "auth_accounts", ["requested_by_id"], ["id"])
+        op.create_unique_constraint("uq_refund_records_idempotency_key", "refund_records", ["idempotency_key"])
     op.create_table(
         "reconciliation_issues",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -35,8 +41,14 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_reconciliation_issues_tenant_status", table_name="reconciliation_issues")
     op.drop_table("reconciliation_issues")
-    with op.batch_alter_table("refund_records", recreate="always") as batch:
-        batch.drop_constraint("uq_refund_records_idempotency_key", type_="unique")
-        batch.drop_constraint("fk_refund_records_requested_by", type_="foreignkey")
-        batch.drop_column("idempotency_key")
-        batch.drop_column("requested_by_id")
+    if context.get_context().dialect.name == "sqlite":
+        with op.batch_alter_table("refund_records", recreate="always") as batch:
+            batch.drop_constraint("uq_refund_records_idempotency_key", type_="unique")
+            batch.drop_constraint("fk_refund_records_requested_by", type_="foreignkey")
+            batch.drop_column("idempotency_key")
+            batch.drop_column("requested_by_id")
+    else:
+        op.drop_constraint("uq_refund_records_idempotency_key", "refund_records", type_="unique")
+        op.drop_constraint("fk_refund_records_requested_by", "refund_records", type_="foreignkey")
+        op.drop_column("refund_records", "idempotency_key")
+        op.drop_column("refund_records", "requested_by_id")
