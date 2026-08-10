@@ -51,7 +51,7 @@ export default function SpecialistLoginPage() {
           <LogIn className="h-5 w-5" />
           {loading ? 'Signing in...' : 'Sign In'}
         </button>
-        <Link href="/signup?type=specialist" className="text-center text-sm font-bold text-[#0b5d4b]">Explore the specialist demo</Link>
+        <Link href="/signup?type=specialist" className="text-center text-sm font-bold text-[#0b5d4b]">Specialist account options</Link>
       </form>
     </AuthFrame>
   );

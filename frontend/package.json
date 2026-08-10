@@ -1,26 +1,31 @@
 {
-  "name": "synaptiverse-triage-frontend",
+  "name": "clinicalflow-triage-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "prepare:e2e": "node scripts/prepare-playwright-browser.mjs",
+    "test:e2e": "npm run prepare:e2e && PLAYWRIGHT_BROWSERS_PATH=/tmp/.cache/ms-playwright playwright test",
+    "test:e2e:record": "npm run prepare:e2e && PLAYWRIGHT_BROWSERS_PATH=/tmp/.cache/ms-playwright PLAYWRIGHT_RECORD_VIDEO=1 playwright test tests/e2e/full-app-recording.spec.ts"
   },
   "dependencies": {
+    "@types/qrcode": "^1.5.6",
     "clsx": "^2.1.1",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.468.0",
     "next": "^16.1.6",
+    "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwind-merge": "^2.5.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "@sparticuz/chromium": "^149.0.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",

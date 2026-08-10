@@ -14,7 +14,7 @@ EventHandler = Callable[[str, dict[str, Any]], Awaitable[None]]
 class RedisInfrastructure:
     """Optional shared cache, limiter, and pub/sub with process-local degradation."""
 
-    def __init__(self, *, enabled: bool, url: str, key_prefix: str = "synaptiverse") -> None:
+    def __init__(self, *, enabled: bool, url: str, key_prefix: str = "clinicalflow") -> None:
         self.enabled = enabled
         self.url = url
         self.key_prefix = key_prefix

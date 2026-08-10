@@ -1,5 +1,6 @@
 export type UrgencyLevel = 'CRITICAL' | 'URGENT' | 'ROUTINE';
-export type QueueStatus = 'QUEUED' | 'BEING_SEEN' | 'RESOLVED' | 'CANCELLED';
+export type IllnessSeverity = 'MILD' | 'MODERATE' | 'SEVERE';
+export type QueueStatus = 'ROUTED' | 'AWAITING_FACILITY_ACCEPTANCE' | 'ACCEPTED' | 'REJECTED' | 'REDIRECTED' | 'TRAVELLING' | 'ARRIVED' | 'CHECKED_IN' | 'WAITING_FOR_NURSE' | 'WAITING_FOR_DOCTOR' | 'QUEUED' | 'BEING_SEEN' | 'ADMITTED' | 'DISCHARGED' | 'TRANSFERRED' | 'CANCELLED' | 'RESOLVED' | 'AWAITING_CLINICAL_REVIEW' | 'SPECIALIST_UNAVAILABLE';
 export type Gender = 'MALE' | 'FEMALE' | 'OTHER';
 
 export type Patient = {
@@ -61,6 +62,8 @@ export type TriageResult = {
   ticket: PatientTicket;
   condition_name: string;
   urgency: UrgencyLevel;
+  severity: IllnessSeverity;
+  severity_label?: string;
   specialty: string;
   nearest_clinic: ClinicMatch;
   appointment_slot: {
@@ -79,6 +82,11 @@ export type SynNotification = {
   title: string;
   body: string;
   is_read: boolean;
+  acknowledged_at?: string | null;
+  requires_acknowledgement?: boolean;
+  event_type?: string;
+  type?: string;
+  appointment_id?: string | null;
   ticket_id: string | null;
   urgency_level?: UrgencyLevel;
   patient_name?: string;
@@ -87,4 +95,3 @@ export type SynNotification = {
 };
 
 export type NetworkState = 'connected' | 'reconnecting' | 'offline';
-

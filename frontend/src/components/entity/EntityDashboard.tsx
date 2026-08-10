@@ -30,6 +30,9 @@ export type View =
   | 'requests'
   | 'results'
   | 'collections'
+  | 'specimens'
+  | 'worklist'
+  | 'critical-results'
   | 'visits'
   | 'vitals'
   | 'care-plans'
@@ -84,6 +87,9 @@ const viewTitles: Record<View, string> = {
   requests: 'Test Requests',
   results: 'Results',
   collections: 'Collections',
+  specimens: 'Specimens',
+  worklist: 'Worklist',
+  'critical-results': 'Critical Results',
   visits: 'Home Visits',
   vitals: 'Vitals',
   'care-plans': 'Care Plans',
@@ -242,7 +248,7 @@ function SettingsPanel({ isLoading, items }: { isLoading: boolean; items: ApiRec
   return <RecordList items={items} view="settings" isLoading={false} />;
 }
 
-const editableEntities: EntityKey[] = ['pharmacy', 'lab', 'hmo', 'moh', 'admin'];
+const editableEntities: EntityKey[] = ['admin'];
 const nonRecordViews: View[] = ['overview', 'analytics', 'notifications', 'settings', 'utilization', 'reports', 'surveillance'];
 
 function RecordEditor({ entity, view, items, onSaved }: { entity: EntityKey; view: View; items: ApiRecord[]; onSaved: () => Promise<void> }) {
