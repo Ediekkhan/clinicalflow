@@ -1,0 +1,15 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/auth';
+
+type Enquiry = { reference: string; status: string; organization_legal_name?: string; organization_type?: string; official_work_email?: string; created_at: string; internal_notes?: string | null };
+
+export default function EnterpriseEnquiriesPage() {
+  const [items, setItems] = useState<Enquiry[]>([]);
+  const [error, setError] = useState('');
+  useEffect(() => { api.get('/api/v1/platform/enterprise-enquiries').then(value => setItems((value as { items?: Enquiry[] }).items ?? [])).catch(() => setError('Unable to load enterprise enquiries.')); }, []);
+  async function update(reference: string, status: string) { await api.patch(`/api/v1/platform/enterprise-enquiries/${reference}`, { status }); setItems(current => current.map(item => item.reference === reference ? { ...item, status } : item)); }
+  function exportReport() { window.location.assign('/api/v1/platform/enterprise-enquiries-report'); }
+  return <main className="min-h-screen bg-slate-50 p-6 sm:p-10"><div className="mx-auto max-w-6xl"><p className="text-xs font-bold uppercase tracking-[0.18em] text-[#0b5d4b]">Platform admin</p><div className="flex flex-wrap items-end justify-between gap-4"><div><h1 className="mt-2 text-3xl font-black text-slate-900">Enterprise enquiries</h1><p className="mt-2 text-slate-600">Non-clinical sales enquiries and follow-up status.</p></div><button onClick={exportReport} className="rounded-xl border border-slate-200 bg-white px-4 py-3 font-semibold text-[#0b5d4b]">Export privacy-safe report</button></div>{error ? <p className="mt-6 rounded-xl bg-rose-50 p-4 text-rose-700">{error}</p> : null}<div className="mt-8 overflow-x-auto rounded-2xl border border-slate-200 bg-white"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-slate-200 bg-slate-50"><tr>{['Reference','Organization','Contact','Status','Submitted','Action'].map(label => <th key={label} className="px-5 py-4 font-bold text-slate-600">{label}</th>)}</tr></thead><tbody>{items.map(item => <tr key={item.reference} className="border-b border-slate-100"><td className="px-5 py-4 font-semibold">{item.reference}</td><td className="px-5 py-4">{item.organization_legal_name ?? '—'}<div className="text-xs text-slate-500">{item.organization_type ?? ''}</div></td><td className="px-5 py-4">{item.official_work_email ?? '—'}</td><td className="px-5 py-4">{item.status}</td><td className="px-5 py-4">{new Date(item.created_at).toLocaleDateString()}</td><td className="px-5 py-4"><select value={item.status} onChange={event => void update(item.reference, event.target.value)} className="rounded-lg border border-slate-200 px-2 py-2"><option>NEW</option><option>CONTACTED</option><option>QUALIFIED</option><option>PILOT_PROPOSED</option><option>PROPOSAL_SENT</option><option>NEGOTIATION</option><option>WON</option><option>LOST</option><option>ARCHIVED</option></select></td></tr>)}</tbody></table>{!items.length && !error ? <p className="p-10 text-center text-slate-500">No enterprise enquiries yet.</p> : null}</div></div></main>;
+}

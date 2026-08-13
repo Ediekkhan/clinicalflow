@@ -25,7 +25,7 @@ def test_nurse_clinic_and_hospital_operational_resources_are_live() -> None:
     assert all(response.status_code == 200 for response in responses.values())
     assert len(responses["/api/v1/nurse/dashboard"].json()["stats"]) == 4
     assert responses["/api/v1/clinic/doctors"].json()["items"]
-    assert responses["/api/v1/hospital/settings"].json()["facility_name"] == "SynaptiVerse Demo Clinic"
+    assert responses["/api/v1/hospital/settings"].json()["facility_name"] == "ClinicalFlow Demo Clinic"
 
 
 def test_patient_cannot_access_operational_staff_portals() -> None:

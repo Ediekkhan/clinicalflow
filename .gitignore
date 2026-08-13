@@ -20,12 +20,16 @@ node_modules/
 .node_modules_broken_*/
 .next/
 .next-playwright/
+.next-playwright-*/
+frontend/.next-playwright-*/
+artifacts/
 out/
 dist/
 build/
 coverage/
 playwright-report/
 test-results/
+docs/generated/
 docs/
 *.db
 *.sqlite
@@ -37,3 +41,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.vercel
+.vercel-legacy
+.env*

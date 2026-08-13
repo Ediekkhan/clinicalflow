@@ -3,12 +3,10 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { LogOut } from 'lucide-react';
-import { clearDemoSession } from '@/lib/demo-session';
 import { api } from '@/lib/auth';
 
 export default function LogoutPage() {
   useEffect(() => {
-    clearDemoSession();
     void api.post('/api/v1/auth/logout', {}).finally(() => {
       window.setTimeout(() => window.location.replace('/login'), 500);
     });
