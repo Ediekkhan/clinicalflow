@@ -13,7 +13,7 @@ PyJWT>=2.9,<3
 # Test dependencies
 pytest>=9.1,<10
 pytest-asyncio>=1.3,<2
-httpx2>=2.7,<3
+httpx>=0.27,<1
 
 # Optional production provider SDKs
 twilio>=9.0,<10
