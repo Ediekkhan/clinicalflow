@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -135,6 +136,20 @@ class Settings(BaseSettings):
                 problems.append("DEFAULT_TENANT_ID must not use the legacy universal demo tenant")
             if not self.cors_origins or "localhost" in self.cors_origins or "127.0.0.1" in self.cors_origins:
                 problems.append("CORS_ORIGINS must explicitly contain production origins")
+            for origin in self.allowed_origins:
+                try:
+                    parsed = urlsplit(origin)
+                    valid_port = parsed.port is None or 1 <= parsed.port <= 65535
+                    valid = (parsed.scheme == "https" and bool(parsed.hostname)
+                             and "*" not in origin and not parsed.username and not parsed.password
+                             and not parsed.path and not parsed.query and not parsed.fragment
+                             and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+                             and valid_port)
+                except ValueError:
+                    valid = False
+                if not valid:
+                    problems.append("CORS_ORIGINS must use explicit HTTPS origins without credentials, paths or wildcards")
+                    break
             if problems:
                 raise ValueError("Unsafe production configuration: " + "; ".join(problems))
         return self
