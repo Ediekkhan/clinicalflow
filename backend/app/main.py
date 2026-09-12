@@ -211,12 +211,15 @@ async def lifespan(app: FastAPI):
     if settings.environment != "production":
         app.state.outbox_worker = OutboxWorker(app.state.session_factory)
         await app.state.outbox_worker.start()
-    yield
-    await app.state.outbox_worker.stop()
-    await app.state.knowledge_graph.close()
-    await app.state.redis.close()
-    triage_manager.broker = None
-    await app.state.engine.dispose()
+    try:
+        yield
+    finally:
+        if app.state.outbox_worker is not None:
+            await app.state.outbox_worker.stop()
+        await app.state.knowledge_graph.close()
+        await app.state.redis.close()
+        triage_manager.broker = None
+        await app.state.engine.dispose()
 
 
 app = FastAPI(title="ClinicalFlow API", version="0.1.0", lifespan=lifespan)
