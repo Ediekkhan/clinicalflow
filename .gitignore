@@ -5,6 +5,7 @@
 .venv-run
 .idea/
 .vscode/
+.codex/
 __pycache__/
 *.pyc
 *.pyo
