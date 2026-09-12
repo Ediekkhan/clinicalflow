@@ -64,16 +64,27 @@ class OutboxWorker:
         event.attempts += 1
         try:
             payload = json.loads(event.payload_json or "{}")
-            channel = str(payload.get("channel") or "").upper()
-            if channel:
-                provider = provider_registry().get(channel)
-                if provider is None:
-                    raise ProviderNotConfigured(f"Unsupported delivery channel: {channel}")
-                await provider.deliver(
-                    recipient=str(payload.get("recipient") or event.recipient_user_id or ""),
-                    payload=dict(payload.get("message") or {}),
-                    idempotency_key=str(event.id),
-                )
+            if not isinstance(payload, dict):
+                raise ValueError("Outbox payload must be an object")
+            channel = payload.get("channel")
+            recipient = payload.get("recipient")
+            message = payload.get("message")
+            if not isinstance(channel, str) or not channel.strip():
+                raise ValueError("Outbox event requires a delivery channel or a dedicated event handler")
+            if not isinstance(recipient, str) or not recipient.strip():
+                raise ValueError("Outbox delivery requires an explicit recipient")
+            if isinstance(message, str) and message.strip():
+                message = {"body": message}
+            if not isinstance(message, dict) or not message:
+                raise ValueError("Outbox message must be a nonempty string or object")
+            provider = provider_registry().get(channel.strip().upper())
+            if provider is None:
+                raise ProviderNotConfigured("Unsupported delivery channel")
+            await provider.deliver(
+                recipient=recipient.strip(),
+                payload=message,
+                idempotency_key=str(event.id),
+            )
             event.status = "PROCESSED"
             event.processed_at = datetime.now(UTC)
             event.last_error = None
