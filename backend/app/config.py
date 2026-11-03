@@ -1,11 +1,13 @@
 from pathlib import Path
+from urllib.parse import urlsplit
+from uuid import UUID
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore", hide_input_in_errors=True)
 
     app_name: str = "clinicalflow"
     app_env: str = ""
@@ -47,6 +49,7 @@ class Settings(BaseSettings):
     auth_cookie_samesite: str = "lax"
     session_secret: str = "development-only-change-me"
     default_tenant_id: str = "11111111-1111-1111-1111-111111111111"
+    platform_tenant_id: str | None = None
     auto_create_schema: bool = True
     cors_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
     # Optional Supabase Auth compatibility layer. Profile and tenant records
@@ -93,6 +96,11 @@ class Settings(BaseSettings):
     def fixtures_enabled(self) -> bool:
         return self.environment == "test" and self.enable_test_fixtures
 
+    @property
+    def operational_tenant_id(self) -> str:
+        """Tenant used for public platform activity outside facility workspaces."""
+        return self.platform_tenant_id or self.default_tenant_id
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:
@@ -127,14 +135,25 @@ class Settings(BaseSettings):
                 problems.append("AUTO_CREATE_SCHEMA must be false")
             if not self.auth_cookie_secure:
                 problems.append("AUTH_COOKIE_SECURE must be true")
-            if self.channel_webhook_secret == "change-me":
-                problems.append("CHANNEL_WEBHOOK_SECRET must be replaced")
-            if len(self.session_secret) < 32 or self.session_secret == "development-only-change-me":
-                problems.append("SESSION_SECRET must be a strong unique value")
-            if self.default_tenant_id == "11111111-1111-1111-1111-111111111111":
-                problems.append("DEFAULT_TENANT_ID must not use the legacy universal demo tenant")
-            if not self.cors_origins or "localhost" in self.cors_origins or "127.0.0.1" in self.cors_origins:
-                problems.append("CORS_ORIGINS must explicitly contain production origins")
+            placeholders = {"", "change-me", "development-only-change-me"}
+            if self.channel_webhook_secret.strip() in placeholders or len(self.channel_webhook_secret.strip()) < 32:
+                problems.append("CHANNEL_WEBHOOK_SECRET must contain at least 32 characters")
+            if self.session_secret.strip() in placeholders or len(self.session_secret.strip()) < 32:
+                problems.append("SESSION_SECRET must contain at least 32 characters")
+            try:
+                tenant_id = UUID(self.platform_tenant_id or "")
+                if tenant_id == UUID("11111111-1111-1111-1111-111111111111"):
+                    raise ValueError
+            except ValueError:
+                problems.append("PLATFORM_TENANT_ID must be a non-demo UUID")
+            origins = self.allowed_origins
+            if not origins:
+                problems.append("CORS_ORIGINS must contain at least one approved HTTPS origin")
+            for origin in origins:
+                parsed = urlsplit(origin)
+                if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment or origin == "*":
+                    problems.append("CORS_ORIGINS must contain only exact HTTPS origins")
+                    break
             if problems:
                 raise ValueError("Unsafe production configuration: " + "; ".join(problems))
         return self

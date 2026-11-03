@@ -407,7 +407,7 @@ async def require_roles(request: Request, session: AsyncSession, allowed: set[st
     return account
 
 def public_tenant_id() -> str:
-    return settings.default_tenant_id
+    return settings.operational_tenant_id
 
 async def tenant_control(session: AsyncSession, tenant_id: uuid.UUID, name: str, default: bool) -> bool:
     record = await session.scalar(select(OperationalRecord).where(OperationalRecord.tenant_id == tenant_id, OperationalRecord.entity == "system", OperationalRecord.resource == "settings", OperationalRecord.title == name))
@@ -441,7 +441,7 @@ async def login(role: str, payload: AuthLoginRequest, request: Request, response
     if not identifier or not payload.password:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if role == "patient":
-        account = await find_account(session, role, identifier, uuid.UUID(settings.default_tenant_id))
+        account = await find_account(session, role, identifier, uuid.UUID(settings.operational_tenant_id))
     else:
         account = await session.scalar(select(AuthAccount).where(
             AuthAccount.role == role,
@@ -491,7 +491,7 @@ async def pin_login(payload: PinLoginRequest, request: Request, response: Respon
         raise HTTPException(status_code=404, detail="Authentication route not found")
     await enforce_rate_limit(request, "auth-login", settings.auth_rate_limit)
     identifier = f"uyo-family:{payload.role}"
-    account = await find_account(session, payload.role, identifier, uuid.UUID(settings.default_tenant_id))
+    account = await find_account(session, payload.role, identifier, uuid.UUID(settings.operational_tenant_id))
     if not account or not verify_password(payload.pin, account.password_hash):
         raise HTTPException(status_code=401, detail="Invalid role or PIN")
     return await _login_account(account, request, response, session)
@@ -502,7 +502,7 @@ async def hospital_login(payload: HospitalLoginRequest, request: Request, respon
         raise HTTPException(status_code=404, detail="Authentication route not found")
     await enforce_rate_limit(request, "auth-login", settings.auth_rate_limit)
     identifier = f"{payload.hospital_code.strip().lower()}:{payload.role}"
-    account = await find_account(session, payload.role, identifier, uuid.UUID(settings.default_tenant_id))
+    account = await find_account(session, payload.role, identifier, uuid.UUID(settings.operational_tenant_id))
     if not account or not verify_password(payload.password, account.password_hash):
         raise HTTPException(status_code=401, detail="Invalid hospital credentials")
     return await _login_account(account, request, response, session)
@@ -1385,7 +1385,7 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
     for consent_type, accepted in (("TERMS", payload.accept_terms), ("PRIVACY", payload.accept_privacy), ("MARKETING", payload.marketing_consent)):
         session.add(ConsentRecord(signup_application_id=application.id, consent_type=consent_type, policy_version=payload.consent_version, accepted=accepted, ip_address=request.client.host if request.client else None))
     session.add(ApplicationReviewHistory(signup_application_id=application.id, previous_status=None, new_status=application.status))
-    default_tenant_id = uuid.UUID(settings.default_tenant_id)
+    default_tenant_id = uuid.UUID(settings.operational_tenant_id)
     if role == "patient" and not await session.get(Tenant, default_tenant_id):
         session.add(Tenant(id=default_tenant_id, name="ClinicalFlow", state_location="Nigeria", accepts_patients=True, status="ACTIVE"))
     if role == "patient" and settings.skip_phone_verification:
@@ -1394,7 +1394,7 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
         duplicate_key = patient_duplicate_key(data.get("first_name", ""), data.get("last_name", ""), date_of_birth)
         if await session.scalar(select(PatientRegistry).where(PatientRegistry.duplicate_key == duplicate_key).limit(1)):
             raise HTTPException(status_code=409, detail="A matching patient identity already exists and requires duplicate review")
-        account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, country_code=country_code_for_name(application.country) or "NG", date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
+        account = AuthAccount(tenant_id=uuid.UUID(settings.operational_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, country_code=country_code_for_name(application.country) or "NG", date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
         session.add(account)
         await session.flush()
         if settings.supabase_auth_enabled:
@@ -1409,7 +1409,7 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
         verification_code = f"{secrets.randbelow(1_000_000):06d}"
         session.add(VerificationEvent(signup_application_id=application.id, event_type="PHONE_OTP", status="PENDING", token_hash=token_hash(verification_code), expires_at=utc_now() + timedelta(minutes=10)))
         session.add(OutboxEvent(
-            tenant_id=uuid.UUID(settings.default_tenant_id),
+            tenant_id=uuid.UUID(settings.operational_tenant_id),
             aggregate_type="SignupApplication",
             aggregate_id=application.id,
             event_type="patient.phone_verification_requested",
@@ -1441,7 +1441,7 @@ async def _create_signup(role: str, payload: SignupApplicationCreate, request: R
         if await session.scalar(select(AuthAccount).where(or_(AuthAccount.email == payload.email, AuthAccount.phone == payload.phone))):
             raise HTTPException(status_code=409, detail="A personal account already exists for this email or phone")
         name_parts = (payload.full_name or "").strip().split(maxsplit=1)
-        account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role=membership_role, identifier=payload.email, password_hash=hash_password(payload.password), first_name=name_parts[0], last_name=name_parts[1] if len(name_parts) > 1 else "", phone=payload.phone, email=payload.email, specialty=payload.data.get("primary_specialty") if role == "specialist" else None, is_active=False)
+        account = AuthAccount(tenant_id=uuid.UUID(settings.operational_tenant_id), role=membership_role, identifier=payload.email, password_hash=hash_password(payload.password), first_name=name_parts[0], last_name=name_parts[1] if len(name_parts) > 1 else "", phone=payload.phone, email=payload.email, specialty=payload.data.get("primary_specialty") if role == "specialist" else None, is_active=False)
         session.add(account)
         await session.flush()
         if settings.supabase_auth_enabled:
@@ -1620,7 +1620,7 @@ async def _verify_patient(payload: SignupVerificationRequest, response: Response
     duplicate = await session.scalar(select(PatientRegistry).where(PatientRegistry.duplicate_key == duplicate_key).limit(1))
     if duplicate:
         raise HTTPException(status_code=409, detail="A matching patient identity already exists and requires duplicate review")
-    account = AuthAccount(tenant_id=uuid.UUID(settings.default_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
+    account = AuthAccount(tenant_id=uuid.UUID(settings.operational_tenant_id), role="patient", identifier=application.phone, password_hash=application.password_hash, first_name=data.get("first_name", ""), last_name=data.get("last_name", ""), phone=application.phone, email=application.email, date_of_birth=date_of_birth, gender=data.get("data", {}).get("gender"), state=data.get("region"), lga=data.get("data", {}).get("city"), emergency_contact=data.get("data", {}).get("emergency_contact_phone"), hmo_provider=data.get("data", {}).get("hmo_provider"), blood_group=data.get("data", {}).get("blood_group"), genotype=data.get("data", {}).get("genotype"), known_allergies=data.get("data", {}).get("known_allergies"), current_medications=data.get("data", {}).get("current_medications"), card_number=f"SV-{secrets.token_hex(5).upper()}", phone_verified_at=utc_now(), is_active=True)
     session.add(account)
     await session.flush()
     await ensure_patient_registry(session, account)

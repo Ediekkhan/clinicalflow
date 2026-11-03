@@ -160,7 +160,7 @@ async def ensure_sqlite_additive_schema(engine) -> None:
 async def seed_facility_registry_compatibility(session) -> None:
     for tenant in list((await session.execute(select(Tenant))).scalars().all()):
         registry = await ensure_facility_registry(session, tenant)
-        if str(tenant.id) == settings.default_tenant_id:
+        if str(tenant.id) == settings.operational_tenant_id:
             registry.emergency_capable = True
         specialties = list((await session.execute(select(Provider.specialty).where(Provider.tenant_id == tenant.id, Provider.is_active.is_(True)).distinct())).scalars().all())
         for specialty in specialties:
@@ -184,7 +184,7 @@ async def lifespan(app: FastAPI):
         async with app.state.session_factory() as session:
             await seed_demo_accounts(session)
         async with app.state.session_factory() as session:
-            await seed_demo_schedule(session, UUID(settings.default_tenant_id))
+            await seed_demo_schedule(session, UUID(settings.operational_tenant_id))
     async with app.state.session_factory() as session:
         await seed_facility_registry_compatibility(session)
     async with app.state.session_factory() as session:
@@ -212,7 +212,8 @@ async def lifespan(app: FastAPI):
         app.state.outbox_worker = OutboxWorker(app.state.session_factory)
         await app.state.outbox_worker.start()
     yield
-    await app.state.outbox_worker.stop()
+    if app.state.outbox_worker is not None:
+        await app.state.outbox_worker.stop()
     await app.state.knowledge_graph.close()
     await app.state.redis.close()
     triage_manager.broker = None
@@ -286,4 +287,3 @@ async def health() -> dict[str, Any]:
 async def metrics() -> Response:
     body = "\n".join([f"clinicalflow_requests_total {request_metrics['requests_total']}", f"clinicalflow_errors_total {request_metrics['errors_total']}"]) + "\n"
     return Response(content=body, media_type="text/plain; version=0.0.4")
-

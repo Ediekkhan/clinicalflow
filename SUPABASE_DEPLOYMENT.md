@@ -69,13 +69,16 @@ AUTH_COOKIE_SECURE=true
 AUTH_COOKIE_SAMESITE=lax
 SESSION_SECRET=<at least 32 random characters>
 CORS_ORIGINS=https://<your-vercel-domain>
-CHANNEL_WEBHOOK_SECRET=<random private webhook secret>
+CHANNEL_WEBHOOK_SECRET=<at least 32 random characters>
 WHATSAPP_VERIFY_TOKEN=<private Meta verification token>
+PLATFORM_TENANT_ID=<dedicated random UUID for public platform activity>
 SKIP_PHONE_VERIFICATION=false
 ENABLE_TEST_FIXTURES=false
 ENABLE_DEMO_CONTENT=false
 DEFAULT_CREDENTIALS_PRESENT=false
 ```
+
+Generate `PLATFORM_TENANT_ID` once and keep the same value across the web and worker services. It identifies the platform-owned tenant used for public intake and patient onboarding; it must not be the legacy `11111111-1111-1111-1111-111111111111` demo UUID. Generate independent secrets for `SESSION_SECRET` and `CHANNEL_WEBHOOK_SECRET`; never reuse database, provider, or user passwords.
 
 Add provider variables only when the provider is configured and verified. Examples include `REDIS_URL`, `REDIS_ENABLED`, email/SMS credentials, storage credentials, and payment webhook secrets. Never expose these as `NEXT_PUBLIC_*` values.
 

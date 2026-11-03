@@ -103,8 +103,9 @@ Read [SUPABASE_DEPLOYMENT.md](SUPABASE_DEPLOYMENT.md) before deploying. The shor
 - Build command: `pip install -r backend/requirements.txt`.
 - Start command: `cd backend && python -m alembic -c alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 - Set `DATABASE_URL` to the Supabase PostgreSQL connection string.
-- Set `APP_ENVIRONMENT=production`, `AUTO_CREATE_SCHEMA=false`, `AUTH_COOKIE_SECURE=true`, a strong `SESSION_SECRET`, and the exact Vercel origin in `CORS_ORIGINS`.
+- Start from `backend/production.env.example`. Set `APP_ENVIRONMENT=production`, `AUTO_CREATE_SCHEMA=false`, `AUTH_COOKIE_SECURE=true`, a strong `SESSION_SECRET`, a strong `CHANNEL_WEBHOOK_SECRET`, a dedicated random `PLATFORM_TENANT_ID`, and the exact Vercel origin in `CORS_ORIGINS`.
 - Keep test fixtures, demo content, default credentials, and phone-verification bypass disabled in production.
+- Production startup validates variable names without logging their secret values. It rejects SQLite, insecure or wildcard CORS origins, weak placeholder secrets, the legacy demo tenant UUID, and phone-verification bypass.
 - Verify the Render `/health` URL before connecting the frontend.
 
 ### Vercel frontend
