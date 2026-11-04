@@ -32,6 +32,7 @@ def test_production_settings_reject_legacy_demo_configuration() -> None:
             enable_test_fixtures=True,
             enable_demo_content=True,
             default_credentials_present=True,
+            platform_tenant_id="11111111-1111-1111-1111-111111111111",
         )
 
 
