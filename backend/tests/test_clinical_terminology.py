@@ -32,6 +32,7 @@ async def content_role_session(role: str):
 
 
 def use_session(client, issued):
+    client.cookies.clear()
     client.cookies.set(ACCESS_COOKIE, issued.access_token)
     client.cookies.set(REFRESH_COOKIE, issued.refresh_token)
 

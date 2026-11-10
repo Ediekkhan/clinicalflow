@@ -44,3 +44,4 @@ Thumbs.db
 .vercel
 .vercel-legacy
 .env*
+compose.local.yml
