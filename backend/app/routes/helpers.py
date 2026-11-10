@@ -1706,6 +1706,9 @@ async def _create_signup(
                 status="ACTIVE",
             )
         )
+        # The verification outbox row below references this tenant. Persist it
+        # first so PostgreSQL cannot flush the dependent row ahead of its FK.
+        await session.flush()
     if role == "patient" and settings.skip_phone_verification:
         data = json.loads(application.payload_json)
         date_of_birth = (
