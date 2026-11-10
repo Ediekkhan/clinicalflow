@@ -1,5 +1,10 @@
-import { EntityDashboard } from '@/components/entity/EntityDashboard';
+import { HospitalRecordsPage } from '@/components/HospitalRecordsPage';
+import { HospitalShell } from '@/components/HospitalShell';
 
 export default function HospitalQueuePage() {
-  return <EntityDashboard entity="hospital" view="queue" title="Hospital Patient Queue" subtitle="All departments in a single Kanban view with reassignment and escalation controls." />;
+  return (
+    <HospitalShell>
+      <HospitalRecordsPage mode="queue" title="Hospital Patient Queue" subtitle="Patients routed or appointed to this hospital, grouped by urgency, assignment and queue state." />
+    </HospitalShell>
+  );
 }

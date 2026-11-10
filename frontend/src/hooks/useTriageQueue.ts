@@ -5,7 +5,7 @@ import { ApiError, escalateTicket, listTickets, updateTicket } from '@/lib/api';
 import { type NetworkMode, type QueueStatus, type Ticket, type WebSocketEvent } from '@/lib/types';
 
 const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE ?? process.env.NEXT_PUBLIC_WS_BASE_URL ?? 'ws://localhost:8000';
-const pendingKey = 'synaptiverse.pending-queue-actions';
+const pendingKey = 'clinicalflow.pending-queue-actions';
 
 type PendingAction =
   | { id: string; type: 'escalate'; ticketId: string; expectedVersion: number }

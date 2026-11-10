@@ -27,6 +27,7 @@ function formatDate(value?: string) {
 export function PatientHistory() {
   const [events, setEvents] = useState<HistoryEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [filter, setFilter] = useState('All');
 
   useEffect(() => {
     let cancelled = false;
@@ -50,8 +51,8 @@ export function PatientHistory() {
   return (
     <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
       <div className="mb-5 flex flex-wrap gap-2">
-        {['All', 'Triage Sessions', 'Appointments', 'Prescriptions'].map((filter, index) => (
-          <button key={filter} className={`rounded-full px-4 py-2 text-sm font-semibold ${index === 0 ? 'bg-[#0b5d4b] text-white' : 'bg-slate-100 text-slate-600'}`}>{filter}</button>
+        {['All', 'Triage Sessions', 'Appointments', 'Laboratory Results', 'Prescriptions'].map((item) => (
+          <button key={item} type="button" onClick={() => setFilter(item)} className={`rounded-full px-4 py-2 text-sm font-semibold ${filter === item ? 'bg-[#0b5d4b] text-white' : 'bg-slate-100 text-slate-600'}`}>{item}</button>
         ))}
       </div>
       {isLoading ? (
@@ -60,7 +61,7 @@ export function PatientHistory() {
         <EmptyState title="No results available" body="Your health history will appear here after visits, prescriptions, or lab results are available." />
       ) : (
         <div className="relative space-y-5 border-l border-slate-200 pl-6">
-          {events.map((event, index) => {
+          {events.filter((event) => filter === 'All' || (event.type ?? '').toLowerCase().includes(filter.replace(' ', '_').toLowerCase().replace('laboratory_results', 'lab')) || (event.title ?? '').toLowerCase().includes(filter.split(' ')[0].toLowerCase())).map((event, index) => {
             const tone = event.tone ?? (event.status === 'CRITICAL' ? 'rose' : 'success');
             return (
               <article key={event.id ?? index} className="relative rounded-xl border border-slate-100 bg-white p-4 shadow-sm">

@@ -7,6 +7,7 @@ import { LogOut } from 'lucide-react';
 import { NotificationBell } from '@/components/layout/NotificationBell';
 import { MobileBottomNav, type DashboardNavItem } from '@/components/layout/MobileBottomNav';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { WorkspaceSelector } from '@/components/layout/WorkspaceSelector';
 
 type DashboardShellProps = {
   entityType: string;
@@ -35,6 +36,7 @@ export function DashboardShell({
   identity = fallbackIdentity,
 }: DashboardShellProps) {
   const resolvedBase = basePath ?? navItems[0]?.href ?? '/dashboard';
+  const supportsWorkspaceSelection = ['doctor', 'specialist', 'nurse', 'hospital', 'clinic'].includes(entityType);
 
   return (
     <div className="min-h-screen bg-[#f4f5ef] text-[#10231e]">
@@ -48,7 +50,10 @@ export function DashboardShell({
           </Link>
           <NotificationBell basePath={resolvedBase} />
         </header>
-        <div className="mx-auto w-full max-w-[1320px] px-5 py-8 md:px-10 md:py-10 xl:px-14 xl:py-12">{children}</div>
+        <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-5 sm:py-8 md:px-10 md:py-10 xl:px-14 xl:py-12">
+          {supportsWorkspaceSelection ? <WorkspaceSelector /> : null}
+          {children}
+        </div>
       </main>
       <MobileBottomNav navItems={navItems} />
     </div>

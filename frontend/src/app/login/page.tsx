@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { ArrowRight, Building2, Eye, EyeOff, LogIn, UserRound } from 'lucide-react';
 import { AuthFrame } from '@/components/auth/AuthFrame';
@@ -13,7 +12,6 @@ function normalizePhone(value: string) {
 }
 
 export default function PatientLoginPage() {
-  const router = useRouter();
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -32,8 +30,8 @@ export default function PatientLoginPage() {
     }
     setLoading(true);
     try {
-      await api.post('/api/v1/auth/patient/login', { phone: normalizedPhone, password });
-      router.push('/dashboard');
+      const session = await api.post('/api/v1/auth/patient/login', { phone: normalizedPhone, password });
+      window.location.assign('/dashboard');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Invalid credentials');
     } finally {
@@ -61,7 +59,7 @@ export default function PatientLoginPage() {
         <div className="grid gap-3 border-t border-[#dbe2dc] pt-5 sm:grid-cols-2">
           <Link href="/signup?type=patient" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#e9f6f1] px-4 py-2.5 text-sm font-bold text-[#0b5d4b]">
             <UserRound className="h-4 w-4" />
-            Explore patient demo
+            Patient account options
           </Link>
           <Link href="/signup" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-[#dbe2dc] bg-white px-4 py-2.5 text-sm font-bold text-[#10231e]">
             <Building2 className="h-4 w-4" />

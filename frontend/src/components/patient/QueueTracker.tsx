@@ -60,8 +60,17 @@ export function QueueTracker() {
   }
 
   const status = queueItem.queue_status ?? queueItem.status;
+  const currentQueue = queueItem;
   const provider = queueItem.specialist_name ?? queueItem.provider_name ?? '';
   const wait = queueItem.estimated_wait ?? (queueItem.wait_minutes ? `${queueItem.wait_minutes} minutes` : '');
+  async function sharePosition() {
+    const text = `My ClinicalFlow queue position is ${currentQueue.queue_position ?? '—'}${currentQueue.facility_name ? ` at ${currentQueue.facility_name}` : ''}.`;
+    if (navigator.share) {
+      await navigator.share({ title: 'My queue position', text });
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+    }
+  }
 
   return (
     <section className="mx-auto max-w-sm rounded-2xl border-t-4 border-amber-500 bg-white p-8 text-center shadow-md">
@@ -76,7 +85,7 @@ export function QueueTracker() {
       {queueItem.facility_name ? <p className="text-xs text-slate-400">{queueItem.facility_name}</p> : null}
       {wait ? <p className="mt-5 text-sm font-semibold text-slate-600">{wait}</p> : null}
       {status ? <div className="mt-5 rounded-full bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-600">{status}</div> : null}
-      <button className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600">
+      <button type="button" onClick={() => void sharePosition()} className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50">
         <Share2 className="h-4 w-4" />
         Share your position
       </button>

@@ -32,6 +32,8 @@ export function PatientSettings() {
   const [form, setForm] = useState<SettingsForm>({});
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -58,11 +60,15 @@ export function PatientSettings() {
 
   async function saveSettings() {
     setIsSaving(true);
+    setSaveMessage('');
+    setSaveError('');
     try {
       const data = await api.patch('/api/v1/patient/profile', form);
       setForm((data ?? form) as SettingsForm);
+      setSaveMessage('Settings saved successfully.');
     } catch (error) {
       console.error(error);
+      setSaveError(error instanceof Error ? error.message : 'Unable to save settings.');
     } finally {
       setIsSaving(false);
     }
@@ -98,6 +104,8 @@ export function PatientSettings() {
         <button type="button" disabled={isSaving} onClick={() => void saveSettings()} className="mt-5 rounded-xl bg-[#0b5d4b] px-5 py-3 text-sm font-semibold text-white disabled:bg-slate-300">
           Save settings
         </button>
+        {saveMessage ? <p role="status" className="mt-3 text-sm font-semibold text-emerald-700">{saveMessage}</p> : null}
+        {saveError ? <p role="alert" className="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</p> : null}
       </article>
     </section>
   );

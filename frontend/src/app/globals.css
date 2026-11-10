@@ -36,6 +36,7 @@ body {
   min-height: 100%;
   background: var(--color-surface);
   color: var(--color-ink);
+  overflow-x: hidden;
 }
 
 ::selection {
@@ -66,6 +67,15 @@ body {
 .sv-button-dark {
   @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-bold text-white transition hover:-translate-y-0.5;
   background: var(--color-brand-strong);
+}
+
+@media (max-width: 639px) {
+  .sv-button-primary,
+  .sv-button-dark {
+    max-width: 100%;
+    white-space: normal;
+    text-align: center;
+  }
 }
 
 button,

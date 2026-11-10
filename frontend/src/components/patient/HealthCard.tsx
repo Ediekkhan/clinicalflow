@@ -1,7 +1,9 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Check, Copy, Download, Pencil, RefreshCw, Share2, ShieldCheck, X } from 'lucide-react';
+import QRCode from 'qrcode';
 import { api } from '@/lib/auth';
 
 type CurrentUser = {
@@ -28,6 +30,13 @@ type CurrentUser = {
 type CardField = 'blood_group' | 'genotype' | 'known_allergies' | 'emergency_contact' | 'hmo_provider';
 
 type CardDetails = Record<CardField, string>;
+
+type SecureCardCredential = {
+  issuer?: string;
+  expires_at?: string;
+  emergency_access_enabled: boolean;
+  qr_payload: string;
+};
 
 const detailFields: { field: CardField; label: string; empty: string; inputType?: string }[] = [
   { field: 'blood_group', label: 'Blood Group', empty: 'Not set' },
@@ -91,15 +100,27 @@ export function HealthCard() {
   const [editValue, setEditValue] = useState('');
   const [confirmField, setConfirmField] = useState<CardField | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [secureCredential, setSecureCredential] = useState<SecureCardCredential | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState('');
 
   useEffect(() => {
     let cancelled = false;
     async function loadUser() {
       try {
-        const data = (await api.get('/api/v1/auth/patient/me')) as CurrentUser;
+        const [profileResult, credentialResult] = await Promise.allSettled([
+          api.get('/api/v1/auth/patient/me') as Promise<CurrentUser>,
+          api.get('/api/v1/patient/health-card') as Promise<SecureCardCredential>,
+        ]);
         if (cancelled) return;
-        setCurrentUser(data);
-        setCardDetails(emptyDetails(data));
+        if (profileResult.status === 'fulfilled') {
+          setCurrentUser(profileResult.value);
+          setCardDetails(emptyDetails(profileResult.value));
+        }
+        if (credentialResult.status === 'fulfilled') {
+          setSecureCredential(credentialResult.value);
+          setQrDataUrl(await QRCode.toDataURL(credentialResult.value.qr_payload, { width: 240, margin: 1, errorCorrectionLevel: 'H' }));
+        }
       } catch (error) {
         console.error(error);
         if (!cancelled) setCurrentUser(null);
@@ -172,6 +193,7 @@ export function HealthCard() {
 
   async function saveField(field: CardField) {
     setIsSaving(true);
+    setSaveError('');
     try {
       const updated = (await api.patch('/api/v1/patient/card-details', { [field]: editValue })) as CurrentUser;
       setCurrentUser((current) => ({ ...current, ...updated }));
@@ -180,6 +202,7 @@ export function HealthCard() {
       setConfirmField(null);
     } catch (error) {
       console.error(error);
+      setSaveError(error instanceof Error ? error.message : 'Unable to save this card detail.');
     } finally {
       setIsSaving(false);
     }
@@ -293,13 +316,26 @@ export function HealthCard() {
           </div>
 
           <div className="mt-5 rounded-2xl bg-blue-50 p-4 text-sm leading-6 text-blue-900">
-            Your card number is the fastest way for partner facilities to find your profile, visits, and care history.
+            {qrDataUrl ? (
+              <div className="flex flex-col items-center text-center">
+                {/* The QR encodes an opaque, revocable lookup token; it contains no medical data. */}
+                <Image src={qrDataUrl} alt="Secure health card lookup QR code" width={144} height={144} unoptimized className="h-36 w-36 rounded-lg bg-white p-2" />
+                <p className="mt-3 font-semibold">Secure facility lookup</p>
+                <p className="mt-1 text-xs text-blue-700">
+                  {secureCredential?.issuer ? `Issued by ${secureCredential.issuer}. ` : ''}
+                  Expires {formatDate(secureCredential?.expires_at)}.
+                </p>
+              </div>
+            ) : (
+              <p>Secure card lookup is currently unavailable.</p>
+            )}
           </div>
         </aside>
       </div>
 
       <section className="rounded-3xl border border-slate-100 bg-white p-5 shadow-sm">
         <h3 className="font-semibold text-slate-900">Card Details</h3>
+        {saveError ? <p role="alert" className="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{saveError}</p> : null}
         <div className="mt-4 divide-y divide-slate-100">
           {detailFields.map(({ field, label, empty, inputType }) => {
             const locked = isLocked(field);

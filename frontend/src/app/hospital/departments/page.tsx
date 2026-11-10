@@ -1,5 +1,10 @@
-import { EntityDashboard } from '@/components/entity/EntityDashboard';
+import { HospitalRecordsPage } from '@/components/HospitalRecordsPage';
+import { HospitalShell } from '@/components/HospitalShell';
 
 export default function HospitalDepartmentsPage() {
-  return <EntityDashboard entity="hospital" view="departments" title="Departments" subtitle="Queue fill level, available doctors, and operational load by department." />;
+  return (
+    <HospitalShell>
+      <HospitalRecordsPage mode="departments" title="Departments" subtitle="Active hospital departments, staffing, queue load and available doctors." />
+    </HospitalShell>
+  );
 }

@@ -3,30 +3,24 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
-SECTOR_RESOURCES = {
-    "pharmacy": ("dashboard", "analytics", "deliveries", "inventory", "notifications", "patients", "prescriptions", "settings"),
-    "lab": ("dashboard", "analytics", "collections", "equipment", "notifications", "patients", "requests", "results", "settings"),
-    "hmo": ("dashboard", "analytics", "authorizations", "claims", "facilities", "members", "notifications", "patients", "payments", "settings", "utilization"),
-    "moh": ("dashboard", "facilities", "reports", "settings", "surveillance"),
-    "admin": ("dashboard", "facilities", "messages", "people", "settings", "vitals"),
-}
+ADMIN_RESOURCES = ("dashboard", "facilities", "messages", "people", "settings", "vitals")
 
 
-def test_admin_can_load_every_sector_portal_contract() -> None:
+def test_platform_admin_is_limited_to_platform_portal_contracts() -> None:
     with TestClient(app) as client:
         login = client.post("/api/v1/auth/staff/pin-login", json={"role": "admin", "pin": "1357"})
-        responses = {
-            f"{entity}/{resource}": client.get(f"/api/v1/{entity}/{resource}")
-            for entity, resources in SECTOR_RESOURCES.items()
-            for resource in resources
-        }
+        responses = {resource: client.get(f"/api/v1/admin/{resource}") for resource in ADMIN_RESOURCES}
+        isolated = [
+            client.get("/api/v1/pharmacy/dashboard"),
+            client.get("/api/v1/hmo/dashboard"),
+            client.get("/api/v1/moh/dashboard"),
+        ]
 
     assert login.status_code == 200
-    failures = {path: response.status_code for path, response in responses.items() if response.status_code != 200}
-    assert failures == {}
-    assert responses["admin/people"].json()["items"]
-    assert responses["moh/facilities"].json()["items"]
-    assert len(responses["admin/vitals"].json()["items"]) == 3
+    assert {path: response.status_code for path, response in responses.items() if response.status_code != 200} == {}
+    assert responses["people"].json()["items"]
+    assert len(responses["vitals"].json()["items"]) == 3
+    assert [response.status_code for response in isolated] == [403, 403, 403]
 
 
 def test_patient_cannot_access_sector_portal_data() -> None:
@@ -37,14 +31,11 @@ def test_patient_cannot_access_sector_portal_data() -> None:
     assert [response.status_code for response in responses] == [403, 403]
 
 
-def test_admin_can_create_and_update_sector_records() -> None:
+def test_legacy_generic_sector_writes_are_rejected() -> None:
     with TestClient(app) as client:
         client.post("/api/v1/auth/staff/pin-login", json={"role": "admin", "pin": "1357"})
-        created = client.post("/api/v1/pharmacy/inventory", json={"title": "Oral rehydration salts", "description": "24 sachets", "status": "LOW_STOCK"})
-        updated = client.patch(f"/api/v1/pharmacy/inventory/{created.json()['id']}", json={"description": "100 sachets", "status": "ACTIVE"})
-        inventory = client.get("/api/v1/pharmacy/inventory")
+        created = client.post("/api/v1/pharmacy/inventory", json={"title": "Legacy inventory", "description": "Generic record", "status": "LOW_STOCK"})
+        updated = client.patch(f"/api/v1/pharmacy/inventory/{'0' * 32}", json={"description": "Generic update", "status": "ACTIVE"})
 
-    assert created.status_code == 201
-    assert updated.status_code == 200
-    assert updated.json()["status"] == "ACTIVE"
-    assert any(item["id"] == created.json()["id"] and item["description"] == "100 sachets" for item in inventory.json()["items"])
+    assert created.status_code == 403
+    assert updated.status_code == 404

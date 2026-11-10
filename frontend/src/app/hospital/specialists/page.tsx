@@ -1,5 +1,10 @@
-import { EntityDashboard } from '@/components/entity/EntityDashboard';
+import { HospitalRecordsPage } from '@/components/HospitalRecordsPage';
+import { HospitalShell } from '@/components/HospitalShell';
 
 export default function HospitalSpecialistsPage() {
-  return <EntityDashboard entity="hospital" view="people" title="Specialists Management" subtitle="Availability, schedules, patient counts, ratings, and actions for all registered specialists." />;
+  return (
+    <HospitalShell>
+      <HospitalRecordsPage mode="specialists" title="Specialists" subtitle="Verified doctors and specialists working in this hospital workspace." />
+    </HospitalShell>
+  );
 }

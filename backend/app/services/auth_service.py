@@ -12,10 +12,14 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import AuthAccount, AuthSession, Tenant
+from app.models import (
+    AuthAccount,
+    AuthSession,
+)
+from app.services.supabase_auth import account_for_supabase_token
 
-ACCESS_COOKIE = "synaptiverse_access"
-REFRESH_COOKIE = "synaptiverse_refresh"
+ACCESS_COOKIE = "__Host-cf_session"
+REFRESH_COOKIE = "__Host-cf_refresh_token"
 PASSWORD_ITERATIONS = 600_000
 
 
@@ -55,7 +59,7 @@ def token_tenant_id(token: str) -> UUID | None:
 async def apply_tenant_context(db: AsyncSession, tenant_id: UUID) -> None:
     db.info["tenant_id"] = str(tenant_id)
     if db.bind and db.bind.dialect.name == "postgresql":
-        await db.execute(text("SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": str(tenant_id)})
+        await db.execute(text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"), {"tenant_id": str(tenant_id)})
 
 
 @dataclass(frozen=True)
@@ -65,7 +69,7 @@ class IssuedSession:
     refresh_token: str
 
 
-async def create_session(db: AsyncSession, account: AuthAccount) -> IssuedSession:
+async def create_session(db: AsyncSession, account: AuthAccount, *, ip_address: str | None = None, user_agent: str | None = None) -> IssuedSession:
     access_token = f"{account.tenant_id}.{secrets.token_urlsafe(48)}"
     refresh_token = f"{account.tenant_id}.{secrets.token_urlsafe(64)}"
     now = utc_now()
@@ -76,6 +80,9 @@ async def create_session(db: AsyncSession, account: AuthAccount) -> IssuedSessio
         refresh_token_hash=token_hash(refresh_token),
         access_expires_at=now + timedelta(minutes=settings.auth_access_minutes),
         refresh_expires_at=now + timedelta(days=settings.auth_refresh_days),
+        ip_address=ip_address,
+        user_agent=user_agent,
+        last_seen_at=now,
     )
     db.add(session)
     await db.flush()
@@ -96,6 +103,9 @@ async def find_account(db: AsyncSession, role: str, identifier: str, tenant_id: 
 
 
 async def account_for_access_token(db: AsyncSession, token: str) -> tuple[AuthAccount, AuthSession] | None:
+    supabase_account = await account_for_supabase_token(db, token)
+    if supabase_account:
+        return supabase_account, None  # type: ignore[return-value]
     tenant_id = token_tenant_id(token)
     if not tenant_id:
         return None
@@ -112,8 +122,6 @@ async def account_for_access_token(db: AsyncSession, token: str) -> tuple[AuthAc
     if auth_session.access_expires_at.replace(tzinfo=UTC) <= utc_now() or not account.is_active:
         return None
     return account, auth_session
-
-
 async def session_for_refresh_token(db: AsyncSession, token: str) -> tuple[AuthAccount, AuthSession] | None:
     tenant_id = token_tenant_id(token)
     if not tenant_id:
@@ -133,21 +141,16 @@ async def session_for_refresh_token(db: AsyncSession, token: str) -> tuple[AuthA
     return account, auth_session
 
 
-async def seed_demo_accounts(db: AsyncSession) -> None:
-    tenant_id = UUID("11111111-1111-1111-1111-111111111111")
-    if not await db.get(Tenant, tenant_id):
-        db.add(Tenant(id=tenant_id, name="SynaptiVerse Demo Clinic", state_location="Akwa Ibom"))
-        await db.flush()
-    seeds = (
-        dict(role="patient", identifier="+2348012345678", first_name="Ada", last_name="Okafor", phone="+2348012345678", card_number="SV-1001"),
-        dict(role="specialist", identifier="dr.ada@example.com", first_name="Ada", last_name="Okafor", email="dr.ada@example.com", specialty="General Medicine"),
-        dict(role="nurse", identifier="uyo-family:nurse", first_name="Ini", last_name="Etim"),
-        dict(role="admin", identifier="uyo-family:admin", first_name="System", last_name="Administrator"),
-        dict(role="doctor", identifier="uyo-family:doctor", first_name="Bassey", last_name="Udo", specialty="General Medicine"),
-        dict(role="hospital_admin", identifier="uyo-family:hospital_admin", first_name="Grace", last_name="Akpan"),
-    )
-    for seed in seeds:
-        if not await find_account(db, seed["role"], seed["identifier"], tenant_id):
-            credential = {"nurse": "2468", "admin": "1357"}.get(seed["role"], "Password123!")
-            db.add(AuthAccount(tenant_id=tenant_id, password_hash=hash_password(credential), **seed))
-    await db.commit()
+__all__ = [
+    "ACCESS_COOKIE",
+    "REFRESH_COOKIE",
+    "account_for_access_token",
+    "apply_tenant_context",
+    "create_session",
+    "find_account",
+    "hash_password",
+    "session_for_refresh_token",
+    "token_hash",
+    "utc_now",
+    "verify_password",
+]

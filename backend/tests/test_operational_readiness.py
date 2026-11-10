@@ -8,7 +8,7 @@ from app.main import app
 
 def test_unsafe_production_configuration_is_rejected() -> None:
     with pytest.raises(ValidationError, match="Unsafe production configuration"):
-        Settings(app_environment="production", database_url="sqlite+aiosqlite:///unsafe.db", auto_create_schema=True, auth_cookie_secure=False, channel_webhook_secret="change-me")
+        Settings(app_environment="production", database_url="sqlite+aiosqlite:///unsafe.db", auto_create_schema=True, auth_cookie_secure=False, channel_webhook_secret="change-me", platform_tenant_id="11111111-1111-1111-1111-111111111111")
 
 
 def test_request_id_metrics_and_retention_job_are_operational() -> None:
@@ -19,6 +19,6 @@ def test_request_id_metrics_and_retention_job_are_operational() -> None:
         retention = client.post("/api/v1/admin/maintenance/retention")
 
     assert health.headers["x-request-id"] == "readiness-test"
-    assert "synaptiverse_requests_total" in metrics.text
+    assert "clinicalflow_requests_total" in metrics.text
     assert retention.status_code == 200
     assert {"sessions_deleted", "audit_logs_deleted", "demo_leads_deleted"} <= retention.json().keys()

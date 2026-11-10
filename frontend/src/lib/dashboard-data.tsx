@@ -1,4 +1,5 @@
 import {
+  ArrowRight,
   BarChart2,
   Bell,
   Building,
@@ -58,6 +59,7 @@ const specialistNav: DashboardNavItem[] = [
   { label: 'Patient Queue', href: '/specialist/patients', icon: Users },
   { label: 'Appointments', href: '/specialist/appointments', icon: Calendar },
   { label: 'Patient Records', href: '/specialist/notes', icon: FileText },
+  { label: 'Referrals', href: '/specialist/referrals', icon: ArrowRight },
   { label: 'Schedule', href: '/specialist/schedule', icon: Calendar },
   { label: 'Analytics', href: '/specialist/earnings', icon: BarChart2 },
   { label: 'Settings', href: '/specialist/settings', icon: Settings },
@@ -89,12 +91,19 @@ const pharmacyNav: DashboardNavItem[] = [
   { label: 'Prescriptions', href: '/pharmacy/prescriptions', icon: ClipboardList },
   { label: 'Inventory', href: '/pharmacy/inventory', icon: Package },
   { label: 'Dispensed Log', href: '/pharmacy/dispensed-log', icon: ClipboardCheck },
+  { label: 'Deliveries', href: '/pharmacy/deliveries', icon: MapPin },
+  { label: 'Analytics', href: '/pharmacy/analytics', icon: BarChart2 },
+  { label: 'Notifications', href: '/pharmacy/notifications', icon: Bell },
   { label: 'Settings', href: '/pharmacy/settings', icon: Settings },
 ];
 
 const labNav: DashboardNavItem[] = [
   { label: 'Overview', href: '/lab/dashboard', icon: LayoutDashboard },
   { label: 'Test Requests', href: '/lab/requests', icon: FlaskConical },
+  { label: 'Collections', href: '/lab/collections', icon: ClipboardList },
+  { label: 'Specimens', href: '/lab/specimens', icon: FlaskConical },
+  { label: 'Worklist', href: '/lab/worklist', icon: ClipboardList },
+  { label: 'Critical Results', href: '/lab/critical-results', icon: Heart },
   { label: 'Results', href: '/lab/results', icon: ClipboardCheck },
   { label: 'Equipment', href: '/lab/equipment', icon: LayoutGrid },
   { label: 'Settings', href: '/lab/settings', icon: Settings },
@@ -116,6 +125,9 @@ const hmoNav: DashboardNavItem[] = [
   { label: 'Overview', href: '/hmo/dashboard', icon: LayoutDashboard },
   { label: 'Claims', href: '/hmo/claims', icon: FileText },
   { label: 'Members', href: '/hmo/members', icon: Users },
+  { label: 'Authorizations', href: '/hmo/authorizations', icon: ClipboardCheck },
+  { label: 'Facilities', href: '/hmo/facilities', icon: Building },
+  { label: 'Payments', href: '/hmo/payments', icon: FileText },
   { label: 'Analytics', href: '/hmo/analytics', icon: BarChart2 },
   { label: 'Settings', href: '/hmo/settings', icon: Settings },
 ];
