@@ -32,7 +32,7 @@ def test_initial_migration_builds_clean_sqlite_schema(tmp_path: Path) -> None:
     assert {"patient_registry", "patient_facility_identities", "provider_registry", "facility_registry", "facility_services", "payer_plan_registry", "patient_consent_directives", "provenance_records", "health_card_credentials", "routing_decisions", "routing_candidates", "appointment_assignment_requests", "outbox_events", "referrals", "transfer_requests", "encounters", "care_teams", "care_team_members", "clinical_notes", "condition_records", "allergy_records", "medication_history", "procedure_records", "clinical_observations", "care_plans", "clinical_tasks", "clinical_documents", "laboratory_orders", "ordered_tests", "specimens", "accessions", "specimen_collections", "specimen_custody_events", "laboratory_results", "diagnostic_reports", "quality_control_reviews", "result_corrections", "critical_result_acknowledgements"} <= tables
     assert {"medications", "prescriptions", "prescription_items", "pharmacy_orders", "inventory_items", "stock_movements", "dispense_events", "substitution_requests", "interaction_alerts", "controlled_medication_logs", "pharmacy_deliveries", "patient_counselling", "payer_organizations", "health_plans", "member_coverages", "benefits", "provider_contracts", "eligibility_requests", "eligibility_responses", "prior_authorizations", "insurance_claims", "claim_items", "claim_responses", "denial_reasons", "claim_appeals", "remittances", "payment_reconciliations", "government_authorities", "government_user_scopes", "mandatory_disease_reports", "surveillance_aggregates", "national_indicators", "outbreak_alerts", "data_disclosures", "support_access_requests", "support_access_approvals", "country_packs", "interoperability_mappings", "offline_clinical_mutations"} <= tables
     assert {"terminology_releases", "clinical_concepts", "concept_designations", "clinical_relationships", "clinical_content_reviews"} <= tables
-    assert revision == ("20260810_0034",)
+    assert revision == ("20261118_0035",)
     with sqlite3.connect(database) as connection:
         ticket_columns = {row[1] for row in connection.execute("PRAGMA table_info(tickets)")}
         tenant_columns = {row[1] for row in connection.execute("PRAGMA table_info(tenants)")}
@@ -94,3 +94,29 @@ def test_postgresql_offline_migration_contains_rls_policies() -> None:
     assert "WITH CHECK" in sql
     assert 'DROP POLICY IF EXISTS tenant_isolation_policy ON "tickets"' in sql
     assert "OR routed_tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid" in sql
+    for table in (
+        "alembic_version",
+        "tenants",
+        "hospital_doctor_memberships",
+        "notifications",
+        "facility_verification_cases",
+        "external_registry_checks",
+        "verification_findings",
+        "facility_admin_activations",
+        "billing_customers",
+        "checkout_sessions",
+        "subscription_plans",
+        "subscriptions",
+        "payment_attempts",
+        "invoices",
+        "payment_webhook_events",
+        "organization_onboarding_drafts",
+        "enterprise_enquiries",
+        "refund_records",
+        "reconciliation_issues",
+    ):
+        assert (
+            f'ALTER TABLE public."{table}" ENABLE ROW LEVEL SECURITY' in sql
+        )
+    assert "REVOKE ALL PRIVILEGES ON TABLE" in sql
+    assert "ALTER DEFAULT PRIVILEGES IN SCHEMA public" in sql
